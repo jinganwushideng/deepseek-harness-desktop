@@ -1,0 +1,38 @@
+<Window x:Class="DeepSeekHarnessDesktop.ShellDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="DeepSeek Harness Desktop" Width="440" MinWidth="380" MaxWidth="620"
+        SizeToContent="Height" MaxHeight="620" WindowStyle="None" ResizeMode="NoResize"
+        ShowInTaskbar="False" WindowStartupLocation="CenterOwner" Background="{DynamicResource Panel}"
+        Icon="Assets/WhaleGirl-v2.png" KeyDown="Dialog_KeyDown">
+  <shell:WindowChrome.WindowChrome>
+    <shell:WindowChrome CaptionHeight="44" ResizeBorderThickness="0" CornerRadius="0" GlassFrameThickness="0"/>
+  </shell:WindowChrome.WindowChrome>
+  <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="12">
+    <Grid>
+      <Grid.RowDefinitions><RowDefinition Height="44"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <Border Grid.Row="0" Background="{DynamicResource ChromeBg}" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" CornerRadius="11,11,0,0" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+        <Grid Margin="16,0,5,0">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <TextBlock x:Name="TitleText" VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+          <Button Grid.Column="1" Style="{StaticResource IconButton}" ToolTip="关闭" shell:WindowChrome.IsHitTestVisibleInChrome="True" Click="CloseButton_Click">
+            <Path Data="M5,5 L17,17 M17,5 L5,17" Stroke="{Binding Foreground,RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.4" Width="13" Height="13" Stretch="Uniform"/>
+          </Button>
+        </Grid>
+      </Border>
+      <Grid Grid.Row="1" Margin="24,22,24,20">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Border x:Name="MessageIconPanel" Width="38" Height="38" CornerRadius="11" Background="{DynamicResource InfoIconBg}" Margin="0,0,15,0" VerticalAlignment="Top">
+          <Path x:Name="MessageIcon" Width="19" Height="19" Stretch="Uniform" Stroke="{DynamicResource Accent}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Fill="Transparent"/>
+        </Border>
+        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="430">
+          <TextBlock x:Name="MessageText" TextWrapping="Wrap" LineHeight="21" Foreground="{DynamicResource StrongSecondaryText}"/>
+        </ScrollViewer>
+      </Grid>
+      <Border Grid.Row="2" Background="{DynamicResource HeaderBg}" BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0" CornerRadius="0,0,11,11" Padding="18,13">
+        <StackPanel x:Name="ButtonsPanel" Orientation="Horizontal" HorizontalAlignment="Right"/>
+      </Border>
+    </Grid>
+  </Border>
+</Window>

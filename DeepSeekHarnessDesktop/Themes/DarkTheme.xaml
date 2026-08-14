@@ -1,0 +1,64 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <SolidColorBrush x:Key="Bg" Color="#08090C"/>
+  <SolidColorBrush x:Key="Panel" Color="#101216"/>
+  <SolidColorBrush x:Key="Panel2" Color="#17191E"/>
+  <SolidColorBrush x:Key="Border" Color="#272A31"/>
+  <SolidColorBrush x:Key="Accent" Color="#7280FF"/>
+  <SolidColorBrush x:Key="Text" Color="#F5F6F8"/>
+  <SolidColorBrush x:Key="Muted" Color="#8D939E"/>
+  <SolidColorBrush x:Key="ChromeBg" Color="#0B0C10"/>
+  <SolidColorBrush x:Key="HeaderBg" Color="#0D0F13"/>
+  <SolidColorBrush x:Key="RailBg" Color="#0B0D10"/>
+  <SolidColorBrush x:Key="InputBg" Color="#0B0D11"/>
+  <SolidColorBrush x:Key="SecondaryButtonBg" Color="#1A1D23"/>
+  <SolidColorBrush x:Key="SecondaryButtonText" Color="#D7DAE0"/>
+  <SolidColorBrush x:Key="IconForeground" Color="#B5BAC4"/>
+  <SolidColorBrush x:Key="IconHoverBg" Color="#1C1F25"/>
+  <SolidColorBrush x:Key="IconPressedBg" Color="#292D35"/>
+  <SolidColorBrush x:Key="ToolTipBg" Color="#20232A"/>
+  <SolidColorBrush x:Key="ToolTipBorder" Color="#343842"/>
+  <SolidColorBrush x:Key="ControlBorder" Color="#3A3E48"/>
+  <SolidColorBrush x:Key="Selection" Color="#6473E8"/>
+  <SolidColorBrush x:Key="FocusBorder" Color="#6977E8"/>
+  <SolidColorBrush x:Key="ControlHoverBorder" Color="#7F8BFF"/>
+  <SolidColorBrush x:Key="ListHover" Color="#171A20"/>
+  <SolidColorBrush x:Key="ListSelected" Color="#222634"/>
+  <SolidColorBrush x:Key="ScrollThumb" Color="#3A3E47"/>
+  <SolidColorBrush x:Key="ScrollThumbHover" Color="#5A606C"/>
+  <SolidColorBrush x:Key="NavSelected" Color="#202430"/>
+  <SolidColorBrush x:Key="SegmentSelected" Color="#242838"/>
+  <SolidColorBrush x:Key="TableHeader" Color="#121419"/>
+  <SolidColorBrush x:Key="SubtleText" Color="#667087"/>
+  <SolidColorBrush x:Key="SecondaryText" Color="#C0C5CE"/>
+  <SolidColorBrush x:Key="StrongSecondaryText" Color="#C7CBD4"/>
+  <SolidColorBrush x:Key="StatusChipBg" Color="#15181D"/>
+  <SolidColorBrush x:Key="StatusChipText" Color="#A7ACB5"/>
+  <SolidColorBrush x:Key="OfficialPanel" Color="#10131B"/>
+  <SolidColorBrush x:Key="OfficialBorder" Color="#282E42"/>
+  <SolidColorBrush x:Key="InfoIconBg" Color="#1B2030"/>
+  <SolidColorBrush x:Key="SuccessIconBg" Color="#172620"/>
+  <SolidColorBrush x:Key="SuccessBadgeBg" Color="#14251F"/>
+  <SolidColorBrush x:Key="SuccessText" Color="#72D7AE"/>
+  <SolidColorBrush x:Key="WarningBadgeBg" Color="#292018"/>
+  <SolidColorBrush x:Key="WarningText" Color="#E5B77E"/>
+  <SolidColorBrush x:Key="StatusPanelBg" Color="#11151E"/>
+  <SolidColorBrush x:Key="StatusPanelBorder" Color="#252B3A"/>
+  <SolidColorBrush x:Key="StatusPanelText" Color="#AEB7D6"/>
+  <SolidColorBrush x:Key="GoodPanelBg" Color="#13221C"/>
+  <SolidColorBrush x:Key="GoodPanelBorder" Color="#234234"/>
+  <SolidColorBrush x:Key="GoodPanelText" Color="#A8DFC9"/>
+  <SolidColorBrush x:Key="DangerPanelBg" Color="#24171B"/>
+  <SolidColorBrush x:Key="DangerPanelBorder" Color="#4C262E"/>
+  <SolidColorBrush x:Key="DangerText" Color="#FF8795"/>
+  <SolidColorBrush x:Key="TitleStatusText" Color="#646B76"/>
+  <SolidColorBrush x:Key="LoadingTrack" Color="#20242D"/>
+  <SolidColorBrush x:Key="LoadingCaption" Color="#626A77"/>
+  <SolidColorBrush x:Key="LoadingDot" Color="#444B56"/>
+  <SolidColorBrush x:Key="SetupHint" Color="#656D79"/>
+  <SolidColorBrush x:Key="SetupOverlayBrush" Color="#F208090C"/>
+  <SolidColorBrush x:Key="LogoBackdrop" Color="#071634"/>
+  <RadialGradientBrush x:Key="LoadingBackground" Center="0.5,0.43" GradientOrigin="0.5,0.43" RadiusX="0.48" RadiusY="0.58">
+    <GradientStop Color="#182039" Offset="0"/><GradientStop Color="#0D1019" Offset="0.38"/><GradientStop Color="#08090C" Offset="1"/>
+  </RadialGradientBrush>
+</ResourceDictionary>

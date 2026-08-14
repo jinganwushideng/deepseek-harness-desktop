@@ -1,0 +1,43 @@
+# Local SDKs and downloaded build tools
+.dotnet/
+_tools/
+dotnet-install.ps1
+
+# Build and test output
+**/bin/
+**/obj/
+artifacts/
+Release/
+TestResults/
+*.trx
+
+# Offline runtime and downloaded archives
+DeepSeekHarnessDesktop/Assets/runtime.seed.zip
+*.nupkg
+*.zip
+
+# Launcher/runtime data
+runtime/
+staging/
+webview-data/
+logs/
+backups/
+launcher.json
+launcher.patch.yml
+helper.mjs
+!DeepSeekHarnessDesktop/Assets/helper.mjs
+*.dshbackup
+.credentials.yaml
+.env
+
+# IDE and OS files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.tmp
+*.log
+Thumbs.db
+Desktop.ini
+.DS_Store

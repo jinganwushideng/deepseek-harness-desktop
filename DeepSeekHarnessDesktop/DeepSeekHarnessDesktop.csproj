@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>DeepSeekHarnessDesktop</AssemblyName>
+    <RootNamespace>DeepSeekHarnessDesktop</RootNamespace>
+    <Version>1.0.0</Version>
+    <Product>DeepSeek Harness Desktop</Product>
+    <AssemblyTitle>DeepSeek Harness Desktop</AssemblyTitle>
+    <Description>DeepSeek Harness 的本地 Windows 桌面壳与管理中心</Description>
+    <FileVersion>1.0.0.0</FileVersion>
+    <ApplicationIcon>Assets\Harness.ico</ApplicationIcon>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <PublishTrimmed>false</PublishTrimmed>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4129.50" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Assets\WhaleGirl-v2.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\runtime.seed.zip"
+                      LogicalName="DeepSeekHarnessDesktop.runtime.seed.zip"
+                      Condition="Exists('$(MSBuildProjectDirectory)\Assets\runtime.seed.zip')" />
+    <EmbeddedResource Include="Assets\helper.mjs" LogicalName="DeepSeekHarnessDesktop.helper.mjs" />
+  </ItemGroup>
+</Project>
