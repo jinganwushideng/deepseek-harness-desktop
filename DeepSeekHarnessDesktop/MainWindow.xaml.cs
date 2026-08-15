@@ -28,6 +28,10 @@ public partial class MainWindow : Window
     private readonly HarnessProcessService _server;
     private readonly NodeHelperService _helper;
     private readonly PluginService _plugins;
+    private readonly PluginRepositoryService _repository;
+    private readonly PluginPreviewService _previews;
+    private readonly FeaturedSkinService _featuredSkins;
+    private readonly DesktopUpdateService _desktopUpdates;
     private readonly SkillService _skills;
     private readonly BackupService _backup;
     private readonly DiagnosticService _diagnostics;
@@ -36,22 +40,34 @@ public partial class MainWindow : Window
     private LauncherSettings _settings;
     private Forms.NotifyIcon? _tray;
     private string? _latestVersion;
+    private DesktopUpdateInfo? _desktopUpdateInfo;
     private bool _browserInitialized;
     private bool _showingSettings;
     private bool _explicitExit;
     private bool _externalBrowserOpened;
     private bool _pluginsLoaded;
     private bool _skillsLoaded;
+    private bool _repositoryLoaded;
     private bool _themeUiReady;
     private bool? _webIsLight;
     private bool? _isLightTheme;
+    private WebSkinAppearance? _webAppearance;
+    private PluginCatalog? _catalog;
+    private PluginCategory? _repositoryCategory;
+    private string _skinCatalogSource = string.Empty;
     private HwndSource? _windowSource;
     private CancellationTokenSource? _dataUsageCts;
+    private CancellationTokenSource? _previewCts;
+    private CancellationTokenSource? _installCts;
     private DateTimeOffset _lastResponseNotification = DateTimeOffset.MinValue;
 
     public MainWindow()
     {
         InitializeComponent();
+        CommunitySkinsList.MaxHeight = 620;
+        ScrollViewer.SetVerticalScrollBarVisibility(CommunitySkinsList, ScrollBarVisibility.Auto);
+        VirtualizingPanel.SetIsVirtualizing(CommunitySkinsList, true);
+        VirtualizingPanel.SetVirtualizationMode(CommunitySkinsList, VirtualizationMode.Recycling);
         _paths.EnsureDirectories();
         _settingsService = new SettingsService(_paths);
         _settings = _settingsService.Load();
@@ -61,6 +77,10 @@ public partial class MainWindow : Window
         _helper = new NodeHelperService(_paths, _log);
         _skills = new SkillService();
         _plugins = new PluginService(_paths, _server, _helper, _log, _skills);
+        _repository = new PluginRepositoryService(_paths, _log);
+        _previews = new PluginPreviewService(_paths, _log);
+        _featuredSkins = new FeaturedSkinService(_paths, _plugins, _log);
+        _desktopUpdates = new DesktopUpdateService(_log);
         _backup = new BackupService(_paths, _log);
         _diagnostics = new DiagnosticService(_paths, _runtime, _server);
 
@@ -187,11 +207,17 @@ public partial class MainWindow : Window
                 _settingsService.Save(_settings);
             }
             await Task.Run(() => _plugins.SyncStoredSkills(_settings));
+            await _plugins.RepairKnownBundleConflictsAsync(_settings);
+            _ = RefreshRepositoryAsync(false);
             await InitializeBrowserAsync();
             RefreshRuntimeView();
             if (_settings.AutoStartServer) await StartServerCoreAsync();
             else ShowSettings(0);
-            if (_settings.CheckUpdates) _ = CheckUpdatesSilentAsync();
+            if (_settings.CheckUpdates)
+            {
+                _ = CheckHarnessUpdatesSilentAsync();
+                _ = CheckDesktopUpdatesSilentAsync();
+            }
         }, showFault: true);
     }
 
@@ -287,6 +313,18 @@ public partial class MainWindow : Window
         if (!Uri.TryCreate(e.Source, UriKind.Absolute, out var source) ||
             !source.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase) || source.Port != _settings.Port) return;
 
+        if (WebThemeMonitor.TryReadAppearanceJson(e.WebMessageAsJson, out var appearance))
+        {
+            Dispatcher.BeginInvoke(() =>
+            {
+                _webAppearance = appearance;
+                _webIsLight = appearance.IsLight;
+                if (_settings.FollowSkinAppearance || ShellThemeService.NormalizeMode(_settings.ShellThemeMode) == ShellThemeService.FollowWeb)
+                    ApplyResolvedShellTheme(force: true);
+                else UpdateThemeModeStatus();
+            });
+            return;
+        }
         string? message;
         try { message = JsonSerializer.Deserialize<string>(e.WebMessageAsJson); }
         catch { return; }
@@ -362,6 +400,8 @@ public partial class MainWindow : Window
         AutoStartCheck.IsChecked = _settings.AutoStartServer;
         ExternalBrowserCheck.IsChecked = _settings.OpenExternalBrowser;
         TelemetryCheck.IsChecked = _settings.ForceTelemetryOff;
+        AutomaticUpdateCheck.IsChecked = _settings.CheckUpdates;
+        FollowSkinAppearanceCheck.IsChecked = _settings.FollowSkinAppearance;
         switch (ShellThemeService.NormalizeMode(_settings.ShellThemeMode))
         {
             case ShellThemeService.FollowSystem: FollowSystemThemeRadio.IsChecked = true; break;
@@ -396,12 +436,15 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ApplyResolvedShellTheme()
+    private void ApplyResolvedShellTheme(bool force = false)
     {
-        var light = ShellThemeService.ResolveLight(_settings.ShellThemeMode, _webIsLight, ShellThemeService.IsSystemLight());
-        if (_isLightTheme != light)
+        var light = _settings.FollowSkinAppearance && _webAppearance is not null
+            ? _webAppearance.IsLight
+            : ShellThemeService.ResolveLight(_settings.ShellThemeMode, _webIsLight, ShellThemeService.IsSystemLight());
+        if (_isLightTheme != light || force)
         {
             ShellThemeService.ApplyPalette(light);
+            if (_settings.FollowSkinAppearance && _webAppearance is not null) ShellThemeService.ApplySkinAppearance(_webAppearance);
             _isLightTheme = light;
             ApplyDwmTheme();
             UpdateBrowserBackground();
@@ -429,6 +472,12 @@ public partial class MainWindow : Window
             ShellThemeService.Light => "当前：固定浅色",
             _ => "当前：固定深色"
         };
+        if (SkinAppearanceStatusText is not null)
+            SkinAppearanceStatusText.Text = !_settings.FollowSkinAppearance
+                ? "已关闭皮肤外观跟随，壳保持上方明暗策略"
+                : _webAppearance is null
+                    ? "已启用，等待 Harness 皮肤信息"
+                    : $"已跟随当前皮肤{(string.IsNullOrWhiteSpace(_webAppearance.SkinId) ? string.Empty : " · " + _webAppearance.SkinId)}";
     }
 
     private void ShowLoading(string message)
@@ -440,6 +489,100 @@ public partial class MainWindow : Window
             FaultView.Visibility = Visibility.Collapsed;
             if (!_showingSettings) Browser.Visibility = Visibility.Collapsed;
         });
+    }
+
+    private void ShowInstallProgress(string title)
+    {
+        InstallProgressTitle.Text = title;
+        InstallProgressBar.IsIndeterminate = false;
+        InstallProgressBar.Value = 0;
+        InstallProgressStage.Text = "正在准备安装";
+        InstallProgressDetail.Text = "";
+        InstallProgressPercent.Text = "0%";
+        CancelInstallButton.IsEnabled = true;
+        CancelInstallButton.Content = "取消";
+        InstallProgressOverlay.Visibility = Visibility.Visible;
+    }
+
+    private void UpdateInstallProgress(PluginInstallProgress value)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            var percentage = Math.Clamp(value.Percentage, 0, 100);
+            InstallProgressBar.IsIndeterminate = value.IsIndeterminate;
+            InstallProgressBar.Value = percentage;
+            InstallProgressStage.Text = value.Stage;
+            InstallProgressDetail.Text = value.Detail;
+            InstallProgressPercent.Text = value.IsIndeterminate ? "处理中" : $"{percentage}%";
+        });
+    }
+
+    private async Task<int?> RunInstallWithOverlayAsync(
+        string title,
+        Func<IProgress<PluginInstallProgress>, CancellationToken, Task<int>> operation)
+    {
+        _installCts?.Dispose();
+        _installCts = new CancellationTokenSource();
+        var current = _installCts;
+        ShowInstallProgress(title);
+        IProgress<PluginInstallProgress> progress = new Progress<PluginInstallProgress>(UpdateInstallProgress);
+        try
+        {
+            var result = await operation(progress, current.Token);
+            progress.Report(new PluginInstallProgress(100, "操作完成", "Harness 服务与插件状态已同步"));
+            await Task.Delay(260);
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            _log.Info("plugin", $"installation cancelled by user: {title}");
+            return null;
+        }
+        finally
+        {
+            if (ReferenceEquals(_installCts, current))
+            {
+                InstallProgressOverlay.Visibility = Visibility.Collapsed;
+                _installCts.Dispose();
+                _installCts = null;
+            }
+        }
+    }
+
+    private Task<int?> RunPluginInstallWithProgressAsync(
+        string title,
+        Func<IProgress<PluginInstallProgress>, CancellationToken, Task<int>> install) =>
+        RunInstallWithOverlayAsync(title, async (progress, cancellationToken) =>
+        {
+            var wasRunning = _server.State == ServerState.Running;
+            if (wasRunning)
+            {
+                progress.Report(new PluginInstallProgress(2, "正在暂停 Harness 服务", "等待插件文件解除占用"));
+                await _server.StopAsync();
+            }
+            try
+            {
+                var exit = await install(progress, cancellationToken);
+                if (exit != 0) return exit;
+                progress.Report(new PluginInstallProgress(91, "正在验证安装结果", "重新读取插件状态"));
+                return 0;
+            }
+            finally
+            {
+                if (wasRunning)
+                {
+                    progress.Report(new PluginInstallProgress(96, "正在恢复 Harness 服务", "等待本地 Web 服务健康检查"));
+                    await _server.StartAsync(_settings, CancellationToken.None);
+                }
+            }
+        });
+
+    private void CancelInstallButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_installCts is null) return;
+        CancelInstallButton.IsEnabled = false;
+        CancelInstallButton.Content = "正在取消…";
+        _installCts.Cancel();
     }
 
     private void ShowFault(string message)
@@ -483,6 +626,7 @@ public partial class MainWindow : Window
         _ = UpdateDataUsageAsync();
         _ = EnsurePluginsLoadedAsync();
         _ = EnsureSkillsLoadedAsync();
+        _ = EnsureRepositoryLoadedAsync();
     }
 
     private void UpdateResponsiveSettingsLayout()
@@ -520,6 +664,8 @@ public partial class MainWindow : Window
                 ? new Thickness(28, 26, 28, 30)
                 : new Thickness(38, 28, 38, 32);
         SkillsContent.Margin = PluginContent.Margin;
+        SkinsContent.Margin = PluginContent.Margin;
+        RepositoryContent.Margin = PluginContent.Margin;
 
         ArrangeResponsivePair(RuntimeSummaryGrid, RuntimeProcessCard, compact, 14);
         ArrangeResponsivePair(PluginInstallGrid, LocalPluginCard, stackPluginChrome, 12);
@@ -532,6 +678,7 @@ public partial class MainWindow : Window
         UserPluginListHost.MinHeight = shortViewport ? 105 : 180;
         OfficialPluginListHost.MinHeight = shortViewport ? 170 : 300;
         SkillListHost.MinHeight = shortViewport ? 120 : 180;
+        SkinListHost.MinHeight = shortViewport ? 100 : 132;
         ArrangeLogFilters(compact);
     }
 
@@ -642,7 +789,13 @@ public partial class MainWindow : Window
         _tray?.Dispose();
         _dataUsageCts?.Cancel();
         _dataUsageCts?.Dispose();
+        _previewCts?.Cancel();
+        _previewCts?.Dispose();
+        _installCts?.Cancel();
+        _installCts?.Dispose();
         _windowSource?.RemoveHook(WindowMessageHook);
+        _repository.Dispose();
+        _previews.Dispose();
         _log.Dispose();
         SystemEvents.SessionEnding -= SystemEvents_SessionEnding;
         SystemEvents.UserPreferenceChanged -= SystemEvents_UserPreferenceChanged;
@@ -691,7 +844,7 @@ public partial class MainWindow : Window
     private async void StopButton_Click(object sender, RoutedEventArgs e) => await RunGuardedAsync(async () => { await _server.StopAsync(); ShowSettings(); });
     private async void RestartButton_Click(object sender, RoutedEventArgs e) => await RunGuardedAsync(async () => { ShowLoading("正在重启服务器…"); await _server.RestartAsync(_settings); await NavigateHarnessAsync(); }, true);
     private async void RetryButton_Click(object sender, RoutedEventArgs e) => await RunGuardedAsync(StartServerCoreAsync, true);
-    private void OpenDiagnosticsButton_Click(object sender, RoutedEventArgs e) => ShowSettings(6);
+    private void OpenDiagnosticsButton_Click(object sender, RoutedEventArgs e) => ShowSettings(8);
     private void OpenLogsButton_Click(object sender, RoutedEventArgs e) => OpenFolder(_paths.Logs);
 
     private string? SelectFolder(string description, string initial)
@@ -709,6 +862,10 @@ public partial class MainWindow : Window
     private void SetupBrowseWorkspace_Click(object sender, RoutedEventArgs e) { var path = SelectFolder("选择默认工作目录", SetupWorkspaceBox.Text); if (path is not null) SetupWorkspaceBox.Text = path; }
     private void SetupBrowseDshHome_Click(object sender, RoutedEventArgs e) { var path = SelectFolder("选择 DSH_HOME", SetupDshHomeBox.Text); if (path is not null) SetupDshHomeBox.Text = path; }
 
+    private static FeaturedSkinSetupChoice ReadFeaturedSkinChoice(System.Windows.Controls.RadioButton enable, System.Windows.Controls.RadioButton remove) =>
+        remove.IsChecked == true ? FeaturedSkinSetupChoice.Remove :
+        enable.IsChecked == true ? FeaturedSkinSetupChoice.Enable : FeaturedSkinSetupChoice.KeepDisabled;
+
     private async void CompleteSetupButton_Click(object sender, RoutedEventArgs e)
     {
         SetupErrorText.Text = "";
@@ -717,6 +874,13 @@ public partial class MainWindow : Window
         {
             var (workspace, dshHome, port) = SettingsService.ValidateConnectionInput(SetupWorkspaceBox.Text, SetupDshHomeBox.Text, SetupPortBox.Text);
             if (HarnessProcessService.IsPortInUse(port)) throw new InvalidOperationException($"端口 {port} 已被其他程序占用，请换一个端口。");
+            var featuredChoices = new Dictionary<string, FeaturedSkinSetupChoice>
+            {
+                [FeaturedSkinService.DeepWhaleId] = ReadFeaturedSkinChoice(SetupDeepWhaleEnableChoice, SetupDeepWhaleRemoveChoice),
+                [FeaturedSkinService.ThemeCollectionId] = ReadFeaturedSkinChoice(SetupThemeCollectionEnableChoice, SetupThemeCollectionRemoveChoice)
+            };
+            if (featuredChoices.Values.Count(choice => choice == FeaturedSkinSetupChoice.Enable) > 1)
+                throw new InvalidOperationException("两套精选皮肤不能同时设为首次启用，请保留其中一套为关闭状态。 ");
             _settings.Workspace = workspace;
             _settings.DshHome = dshHome;
             _settings.Port = port;
@@ -729,8 +893,19 @@ public partial class MainWindow : Window
             SetupOverlay.Visibility = Visibility.Collapsed;
             ShowLoading("正在释放完全离线运行环境…");
             await _runtime.EnsureSeedAsync(new Progress<string>(ShowLoading));
+            var featuredResult = await RunInstallWithOverlayAsync("正在准备内置精选皮肤", async (progress, cancellationToken) =>
+            {
+                await _featuredSkins.ApplyFirstRunChoicesAsync(_settings, featuredChoices, progress, cancellationToken);
+                return 0;
+            });
+            if (featuredResult is null) throw new InvalidOperationException("首次初始化已取消。 ");
             await InitializeBrowserAsync();
             await StartServerCoreAsync();
+            if (_settings.CheckUpdates)
+            {
+                _ = CheckHarnessUpdatesSilentAsync();
+                _ = CheckDesktopUpdatesSilentAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -755,6 +930,8 @@ public partial class MainWindow : Window
 
             var old = (_settings.Workspace, _settings.DshHome, _settings.Port, _settings.CloseToTray, _settings.NotifyOnResponseComplete,
                 _settings.LaunchAtLogin, _settings.AutoStartServer, _settings.OpenExternalBrowser, _settings.ForceTelemetryOff);
+            var oldFollowSkinAppearance = _settings.FollowSkinAppearance;
+            var oldAutomaticUpdateCheck = _settings.CheckUpdates;
             var connectionChanged = port != _settings.Port || !workspace.Equals(_settings.Workspace, StringComparison.OrdinalIgnoreCase) || !dshHome.Equals(_settings.DshHome, StringComparison.OrdinalIgnoreCase);
             var forceTelemetryOff = TelemetryCheck.IsChecked == true;
             var restartRequired = connectionChanged || forceTelemetryOff != _settings.ForceTelemetryOff;
@@ -769,13 +946,18 @@ public partial class MainWindow : Window
                 _settings.AutoStartServer = AutoStartCheck.IsChecked == true;
                 _settings.OpenExternalBrowser = ExternalBrowserCheck.IsChecked == true;
                 _settings.ForceTelemetryOff = forceTelemetryOff;
+                _settings.FollowSkinAppearance = FollowSkinAppearanceCheck.IsChecked == true;
+                _settings.CheckUpdates = AutomaticUpdateCheck.IsChecked == true;
                 _settingsService.Save(_settings);
+                ApplyResolvedShellTheme(force: true);
                 if (restartRequired && wasRunning) await _server.RestartAsync(_settings);
             }
             catch
             {
                 (_settings.Workspace, _settings.DshHome, _settings.Port, _settings.CloseToTray, _settings.NotifyOnResponseComplete,
                     _settings.LaunchAtLogin, _settings.AutoStartServer, _settings.OpenExternalBrowser, _settings.ForceTelemetryOff) = old;
+                _settings.FollowSkinAppearance = oldFollowSkinAppearance;
+                _settings.CheckUpdates = oldAutomaticUpdateCheck;
                 _settingsService.Save(_settings);
                 ApplySettingsToControls();
                 if (wasRunning && _server.State != ServerState.Running) try { await _server.StartAsync(_settings); } catch (Exception rollbackError) { _log.Error("settings", "rollback start failed: " + rollbackError); }
@@ -788,6 +970,12 @@ public partial class MainWindow : Window
             _ = UpdateDataUsageAsync();
             GeneralStatusText.Text = restartRequired && wasRunning ? "设置已保存，Harness 已使用新配置重新启动。" : "设置已保存并立即生效。";
             GeneralStatusPanel.Visibility = Visibility.Visible;
+            if (!_settings.CheckUpdates) DesktopUpdateBanner.Visibility = Visibility.Collapsed;
+            else if (!oldAutomaticUpdateCheck)
+            {
+                _ = CheckHarnessUpdatesSilentAsync();
+                _ = CheckDesktopUpdatesSilentAsync();
+            }
         });
     }
 
@@ -801,7 +989,7 @@ public partial class MainWindow : Window
         });
     }
 
-    private async Task CheckUpdatesSilentAsync()
+    private async Task CheckHarnessUpdatesSilentAsync()
     {
         try { await CheckUpdatesCoreAsync(false); } catch (Exception ex) { _log.Warn("update", ex.Message); }
     }
@@ -816,6 +1004,60 @@ public partial class MainWindow : Window
         LatestVersionText.Text = available ? $"可用版本：{_latestVersion}（当前 {_settings.CurrentRuntimeVersion}）" : $"当前已是 npm 最新版：{_settings.CurrentRuntimeVersion}";
         InstallUpdateButton.IsEnabled = available;
         if (notify && !available) ShellDialog.Show(this, "当前已是 npm 最新版。", "检查更新");
+    }
+
+    private async Task CheckDesktopUpdatesSilentAsync()
+    {
+        try { await CheckDesktopUpdatesCoreAsync(false); }
+        catch (Exception ex)
+        {
+            _log.Warn("desktop-update", LogService.Redact(ex.Message));
+            DesktopVersionText.Text = "自动检查暂时失败，可稍后手动重试";
+        }
+    }
+
+    private async void CheckDesktopUpdateButton_Click(object sender, RoutedEventArgs e) =>
+        await RunGuardedAsync(() => CheckDesktopUpdatesCoreAsync(true));
+
+    private async Task CheckDesktopUpdatesCoreAsync(bool notify)
+    {
+        DesktopVersionText.Text = "正在查询 GitHub Releases…";
+        var available = await _desktopUpdates.CheckAsync();
+        _settings.LastDesktopUpdateCheck = DateTimeOffset.Now;
+        _settingsService.Save(_settings);
+        _desktopUpdateInfo = available;
+        OpenDesktopReleaseButton.IsEnabled = available is not null;
+
+        if (available is null)
+        {
+            DesktopVersionText.Text = $"当前已是最新桌面壳版本：{DesktopUpdateService.CurrentVersion}";
+            if (notify) ShellDialog.Show(this, "当前已是最新桌面壳版本。", "检查桌面壳更新");
+            return;
+        }
+
+        var prerelease = available.IsPrerelease ? " · 预发布" : string.Empty;
+        DesktopVersionText.Text = $"可用桌面壳版本：{available.Version}{prerelease}（当前 {DesktopUpdateService.CurrentVersion}）";
+        DesktopUpdateBannerText.Text = $"版本 {available.Version}{prerelease} 已发布。更新需要下载并运行新版安装程序。";
+        if (notify || !_settings.DismissedDesktopUpdateVersion.Equals(available.Version, StringComparison.OrdinalIgnoreCase))
+            DesktopUpdateBanner.Visibility = Visibility.Visible;
+    }
+
+    private void DismissDesktopUpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_desktopUpdateInfo is not null)
+        {
+            _settings.DismissedDesktopUpdateVersion = _desktopUpdateInfo.Version;
+            try { _settingsService.Save(_settings); }
+            catch (Exception ex) { _log.Warn("desktop-update", "dismiss save failed: " + LogService.Redact(ex.Message)); }
+        }
+        DesktopUpdateBanner.Visibility = Visibility.Collapsed;
+    }
+
+    private void OpenDesktopUpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        var target = _desktopUpdateInfo?.ReleaseUrl;
+        if (string.IsNullOrWhiteSpace(target)) target = "https://github.com/jinganwushideng/deepseek-harness-desktop/releases";
+        OpenExternal(target);
     }
 
     private async void InstallUpdateButton_Click(object sender, RoutedEventArgs e)
@@ -885,13 +1127,17 @@ public partial class MainWindow : Window
         {
             var rows = await _plugins.InspectAsync(_settings);
             var official = rows.Where(x => x.IsBuiltIn).OrderBy(x => x.Source).ThenBy(x => x.Id).ToArray();
-            var user = rows.Where(x => !x.IsBuiltIn).OrderBy(x => x.Package).ThenBy(x => x.Id).ToArray();
+            var skins = rows.Where(x => !x.IsBuiltIn && x.IsSkin).OrderBy(x => x.Package).ThenBy(x => x.Id).ToArray();
+            var user = rows.Where(x => !x.IsBuiltIn && !x.IsSkin).OrderBy(x => x.Package).ThenBy(x => x.Id).ToArray();
             PluginsList.ItemsSource = user;
+            SkinsList.ItemsSource = skins;
             OfficialPluginsList.ItemsSource = official;
             PluginCountText.Text = user.Length == 0 ? "尚未安装用户插件" : $"用户插件 {user.Length} 个";
             OfficialPluginCountText.Text = $"官方组件 {official.Length} 个 · @deepseek-ai/dsh-base 与 dsh-web-app";
             PluginEmptyState.Visibility = user.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+            SkinEmptyState.Visibility = skins.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
             OfficialPluginEmptyState.Visibility = official.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+            UpdateCatalogInstallStates(rows);
             PluginEmptyTitle.Text = "尚未安装用户插件";
             PluginEmptySubtitle.Text = "用户依赖只安装到 DSH_HOME 的 web profile";
             _pluginsLoaded = true;
@@ -905,6 +1151,19 @@ public partial class MainWindow : Window
             OfficialPluginCountText.Text = "读取失败";
             throw;
         }
+    }
+
+    private void UpdateCatalogInstallStates(IReadOnlyList<PluginItem> installed)
+    {
+        if (_catalog is null) return;
+        foreach (var item in _catalog.Items)
+        {
+            var match = installed.FirstOrDefault(plugin => plugin.Package.Equals(item.Package, StringComparison.OrdinalIgnoreCase));
+            item.IsInstalled = match is not null;
+            item.IsEnabled = match is not null && !match.Disabled;
+        }
+        RepositoryList?.Items.Refresh();
+        CommunitySkinsList?.Items.Refresh();
     }
     private async Task EnsurePluginsLoadedAsync()
     {
@@ -939,7 +1198,14 @@ public partial class MainWindow : Window
         var parsed = raw.Equals(spec, StringComparison.Ordinal) ? string.Empty : $"\n解析后：{spec}";
         var sourceKind = PluginService.DescribeInstallSource(spec);
         if (ShellDialog.Show(this, $"输入：{raw}{parsed}\n来源类型：{sourceKind}\n安装目标：web profile 用户插件目录\n\n插件及其生命周期脚本会以当前用户权限执行。仅安装你信任的来源。", "确认插件来源", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-        await RunGuardedAsync(async () => { await WithServerStoppedAsync(async () => { var exit = await _plugins.InstallAsync(_settings, spec, false); if (exit != 0) throw new InvalidOperationException($"插件安装失败，退出代码 {exit}。"); }); PluginSpecBox.Clear(); await RefreshPluginAndSkillListsAsync(); });
+        await RunGuardedAsync(async () =>
+        {
+            var exit = await RunPluginInstallWithProgressAsync("正在安装插件", (progress, token) => _plugins.InstallAsync(_settings, spec, false, progress, token));
+            if (exit is null) return;
+            if (exit != 0) throw new InvalidOperationException($"插件安装失败，退出代码 {exit}。");
+            PluginSpecBox.Clear();
+            await RefreshPluginAndSkillListsAsync();
+        });
     }
     private void BrowseLocalPlugin_Click(object sender, RoutedEventArgs e)
     {
@@ -956,7 +1222,14 @@ public partial class MainWindow : Window
         var link = PluginLinkCheck.IsChecked == true;
         var mode = link ? "link: 开发链接（目录变化实时生效）" : "file: 稳定本地安装";
         if (ShellDialog.Show(this, $"目录：{path}\n方式：{mode}\n\n本地插件会以当前用户权限执行。确认信任并安装吗？", "确认本地插件", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-        await RunGuardedAsync(async () => { await WithServerStoppedAsync(async () => { var exit = await _plugins.InstallAsync(_settings, path, link); if (exit != 0) throw new InvalidOperationException($"本地插件安装失败，退出代码 {exit}。"); }); LocalPluginPathBox.Clear(); await RefreshPluginAndSkillListsAsync(); });
+        await RunGuardedAsync(async () =>
+        {
+            var exit = await RunPluginInstallWithProgressAsync("正在安装本地插件", (progress, token) => _plugins.InstallAsync(_settings, path, link, progress, token));
+            if (exit is null) return;
+            if (exit != 0) throw new InvalidOperationException($"本地插件安装失败，退出代码 {exit}。");
+            LocalPluginPathBox.Clear();
+            await RefreshPluginAndSkillListsAsync();
+        });
     }
     private async void UpdatePluginsButton_Click(object sender, RoutedEventArgs e) => await RunGuardedAsync(async () => { await WithServerStoppedAsync(async () => { var exit = await _plugins.UpdateAllAsync(_settings); if (exit != 0) throw new InvalidOperationException($"插件更新失败，退出代码 {exit}。"); }); await RefreshPluginAndSkillListsAsync(); });
     private async void EnablePluginButton_Click(object sender, RoutedEventArgs e) => await SetSelectedPluginDisabledAsync(false);
@@ -984,6 +1257,196 @@ public partial class MainWindow : Window
     }
     private void OpenUserPluginsFolder_Click(object sender, RoutedEventArgs e) => OpenFolder(_plugins.UserPluginDirectory(_settings));
     private void OpenOfficialPluginsFolder_Click(object sender, RoutedEventArgs e) => OpenFolder(_plugins.OfficialPluginDirectory(_settings));
+
+    private async void RefreshSkinsButton_Click(object sender, RoutedEventArgs e) =>
+        await RunGuardedAsync(async () => { _pluginsLoaded = false; await RefreshPluginsAsync(); await RefreshRepositoryAsync(true); });
+
+    private async void EnableSkinButton_Click(object sender, RoutedEventArgs e) => await SetSelectedSkinDisabledAsync(false);
+    private async void DisableSkinButton_Click(object sender, RoutedEventArgs e) => await SetSelectedSkinDisabledAsync(true);
+    private async Task SetSelectedSkinDisabledAsync(bool disabled)
+    {
+        if (SkinsList.SelectedItem is not PluginItem skin) { ShellDialog.Show(this, "请先选择一个已安装皮肤。", disabled ? "禁用皮肤" : "启用皮肤"); return; }
+        await SetPluginDisabledAsync(skin, disabled);
+    }
+
+    private async void RemoveSkinButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (SkinsList.SelectedItem is not PluginItem skin) { ShellDialog.Show(this, "请先选择一个已安装皮肤。", "卸载皮肤"); return; }
+        if (ShellDialog.Show(this, $"确定卸载皮肤 {skin.Package}？", "卸载皮肤", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        await RunGuardedAsync(async () => { await WithServerStoppedAsync(async () => { var exit = await _plugins.RemoveAsync(_settings, skin); if (exit != 0) throw new InvalidOperationException($"卸载失败，退出代码 {exit}。"); }); await RefreshPluginAndSkillListsAsync(); });
+    }
+
+    private async Task EnsureRepositoryLoadedAsync()
+    {
+        if (_repositoryLoaded) return;
+        try { await RefreshRepositoryAsync(false); }
+        catch (Exception ex) { _log.Warn("repository", "initial catalog load failed: " + ex.Message); }
+    }
+
+    private async Task RefreshRepositoryAsync(bool force)
+    {
+        if (RepositoryStatusText is not null) RepositoryStatusText.Text = "正在更新目录…";
+        var (catalog, source) = await _repository.GetAsync(force);
+        _catalog = catalog;
+        _repositoryLoaded = true;
+        if (_pluginsLoaded)
+        {
+            var visibleInstalled = EnumeratePluginItems(PluginsList.ItemsSource)
+                .Concat(EnumeratePluginItems(SkinsList.ItemsSource))
+                .Concat(EnumeratePluginItems(OfficialPluginsList.ItemsSource))
+                .ToArray();
+            UpdateCatalogInstallStates(visibleInstalled);
+        }
+        _previewCts?.Cancel();
+        _previewCts?.Dispose();
+        _previewCts = new CancellationTokenSource();
+        var allSkins = PluginRepositoryService.Filter(catalog, null, PluginCategory.Skin)
+            .Where(item => item.Verified).ToArray();
+        _skinCatalogSource = $"{source} · {catalog.GeneratedAt.LocalDateTime:MM-dd HH:mm}";
+        ApplySkinCatalogFilter();
+        ApplyRepositoryFilter();
+        var ordered = PluginRepositoryService.Filter(catalog, null, null);
+        var firstScreen = allSkins.Take(14).Concat(ordered.Take(14)).DistinctBy(item => item.Package).ToArray();
+        var preload = allSkins.Skip(14).Take(18).Concat(ordered.Skip(14).Take(18)).DistinctBy(item => item.Package).ToArray();
+        _ = LoadRepositoryPreviewPhasesAsync(firstScreen, preload, _previewCts.Token);
+    }
+
+    private static IEnumerable<PluginItem> EnumeratePluginItems(System.Collections.IEnumerable? source) =>
+        source?.Cast<object>().OfType<PluginItem>() ?? [];
+
+    private async Task LoadRepositoryPreviewPhasesAsync(IEnumerable<PluginCatalogItem> firstScreen, IEnumerable<PluginCatalogItem> preload, CancellationToken cancellationToken)
+    {
+        try
+        {
+            Action<PluginCatalogItem> refresh = _ => Dispatcher.BeginInvoke(() =>
+            {
+                RepositoryList?.Items.Refresh();
+                CommunitySkinsList?.Items.Refresh();
+            }, DispatcherPriority.Background);
+            await _previews.PrepareAsync(firstScreen, refresh, cancellationToken);
+            await Task.Delay(350, cancellationToken);
+            await _previews.PrepareAsync(preload, refresh, cancellationToken);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private void ApplyRepositoryFilter()
+    {
+        if (_catalog is null || RepositoryList is null) return;
+        var items = PluginRepositoryService.Filter(_catalog, RepositorySearchBox?.Text, _repositoryCategory);
+        RepositoryList.ItemsSource = items;
+        RepositoryEmptyState.Visibility = items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        var previewCount = _catalog.Items.Count(item => PluginPreviewService.ResolvePreviewUrl(item) is not null);
+        var chineseCount = _catalog.Items.Count(item => !string.IsNullOrWhiteSpace(item.DescriptionZh));
+        RepositoryStatusText.Text = $"显示 {items.Count} / {_catalog.Items.Count} · 中文 {chineseCount} · 预览 {previewCount} · 每日自动更新";
+        if (_repositoryLoaded && _previewCts is { IsCancellationRequested: false })
+            _ = _previews.PrepareAsync(items.Take(14), _ => Dispatcher.BeginInvoke(() => RepositoryList?.Items.Refresh(), DispatcherPriority.Background), _previewCts.Token);
+    }
+
+    private void ApplySkinCatalogFilter()
+    {
+        if (_catalog is null || CommunitySkinsList is null) return;
+        var allCount = _catalog.Items.Count(item => item.Category == PluginCategory.Skin && item.Verified);
+        var items = PluginRepositoryService.Filter(_catalog, SkinCatalogSearchBox?.Text, PluginCategory.Skin)
+            .Where(item => item.Verified).ToArray();
+        CommunitySkinsList.ItemsSource = items;
+        SkinCatalogStatusText.Text = $"显示 {items.Length} / {allCount} · {_skinCatalogSource}";
+        if (_repositoryLoaded && _previewCts is { IsCancellationRequested: false })
+            _ = _previews.PrepareAsync(items.Take(14), _ => Dispatcher.BeginInvoke(() => CommunitySkinsList?.Items.Refresh(), DispatcherPriority.Background), _previewCts.Token);
+    }
+
+    private void SkinCatalogSearchChanged(object sender, TextChangedEventArgs e) => ApplySkinCatalogFilter();
+
+    private async void RefreshRepositoryButton_Click(object sender, RoutedEventArgs e) =>
+        await RunGuardedAsync(() => RefreshRepositoryAsync(true));
+
+    private void RepositoryFilterChanged(object sender, TextChangedEventArgs e) => ApplyRepositoryFilter();
+
+    private void RepositoryCategoryButton_Click(object sender, RoutedEventArgs e)
+    {
+        var value = (sender as FrameworkElement)?.Tag as string;
+        _repositoryCategory = value switch
+        {
+            "Skin" => PluginCategory.Skin,
+            "Plugin" => PluginCategory.Plugin,
+            "Skill" => PluginCategory.Skill,
+            "DeveloperTool" => PluginCategory.DeveloperTool,
+            _ => null
+        };
+        ApplyRepositoryFilter();
+    }
+
+    private void OpenCatalogSourceButton_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if ((sender as FrameworkElement)?.Tag is PluginCatalogItem tagItem) { OpenCatalogDetail(tagItem); return; }
+        if ((sender as System.Windows.Controls.Button)?.CommandParameter is PluginCatalogItem item) OpenCatalogDetail(item);
+    }
+
+    private void OpenCatalogDetail(PluginCatalogItem item)
+    {
+        if (string.IsNullOrWhiteSpace(item.RepositoryUrl))
+        {
+            ShellDialog.Show(this, "这个条目没有可打开的项目主页。", "项目主页");
+            return;
+        }
+        try { new CatalogDetailWindow(this, item, _paths.WebViewData).Show(); }
+        catch (Exception ex) { ShellDialog.Show(this, LogService.Redact(ex.Message), "无法打开项目主页", MessageBoxButton.OK, MessageBoxImage.Error); }
+    }
+
+    private void CatalogCard_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not PluginCatalogItem item) return;
+        for (var node = e.OriginalSource as DependencyObject; node is not null; node = VisualTreeHelper.GetParent(node))
+            if (node is System.Windows.Controls.Button) return;
+        OpenCatalogDetail(item);
+        e.Handled = true;
+    }
+
+    private async void CatalogPreview_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        if ((sender as FrameworkElement)?.Tag is not PluginCatalogItem item) return;
+        try
+        {
+            var token = _previewCts is { IsCancellationRequested: false } ? _previewCts.Token : CancellationToken.None;
+            await _previews.PrepareAsync([item], _ => { }, token);
+            RepositoryList?.Items.Refresh();
+            CommunitySkinsList?.Items.Refresh();
+            new ImagePreviewWindow(this, item.Name, item.PreviewImagePath).Show();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { ShellDialog.Show(this, LogService.Redact(ex.Message), "无法打开预览图", MessageBoxButton.OK, MessageBoxImage.Error); }
+    }
+
+    private async void InstallCatalogItemButton_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as System.Windows.Controls.Button)?.CommandParameter is not PluginCatalogItem item) return;
+        if (item.IsInstalled)
+        {
+            if (item.IsEnabled) return;
+            await RunGuardedAsync(async () =>
+            {
+                var installed = (await _plugins.InspectAsync(_settings)).FirstOrDefault(plugin => plugin.Package.Equals(item.Package, StringComparison.OrdinalIgnoreCase));
+                if (installed is null) { await RefreshPluginsAsync(); return; }
+                await WithServerStoppedAsync(() => _plugins.SetDisabledAsync(_settings, installed, false));
+                await RefreshPluginAndSkillListsAsync();
+            });
+            return;
+        }
+        var scriptWarning = item.HasLifecycleScripts ? "\n脚本：包含生命周期或构建脚本" : "\n脚本：未发现安装期生命周期脚本";
+        var buildWarning = item.RequiresBuildApproval ? "\n\n该 Git 来源需要构建。确认后才会以当前用户权限执行其脚本。" : string.Empty;
+        var prompt = $"{item.Name}\n简介：{item.DisplayDescription}\n包：{item.Package}\n版本：{item.Version}\n来源：{item.SourceType} · {item.RepositoryUrl}\n许可证：{item.License}\n校验：{item.TrustText}{scriptWarning}{buildWarning}\n\n插件会以当前用户权限执行。仅安装你信任的来源。继续吗？";
+        if (ShellDialog.Show(this, prompt, "确认一键安装", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        await RunGuardedAsync(async () =>
+        {
+            var exit = await RunPluginInstallWithProgressAsync($"正在安装 {item.Name}", (progress, token) => _plugins.InstallAsync(_settings, item.InstallSpec, false, progress, token));
+            if (exit is null) return;
+            if (exit != 0) throw new InvalidOperationException($"{item.Name} 安装失败，退出代码 {exit}。");
+            await RefreshPluginAndSkillListsAsync();
+            ShellDialog.Show(this, $"{item.Name} 已安装并已启用。" + (item.Category == PluginCategory.Skin ? "\n可在皮肤页随时禁用或切换。" : string.Empty), "安装完成");
+        });
+    }
 
     private async Task RefreshPluginAndSkillListsAsync()
     {
@@ -1181,7 +1644,7 @@ public partial class MainWindow : Window
 
     private void AppendLog(string line)
     {
-        if (!_showingSettings || SettingsTabs.SelectedIndex != 5) return;
+        if (!_showingSettings || SettingsTabs.SelectedIndex != 7) return;
         if (!LogLineMatches(line)) return;
         LogsBox.AppendText(line + Environment.NewLine);
         LogsBox.ScrollToEnd();

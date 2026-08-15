@@ -6,6 +6,8 @@ namespace DeepSeekHarnessDesktop.Services;
 
 public sealed class PluginService
 {
+    private const string ThemesUiPackage = "@dshthemes/ui";
+    private const string ThemesCorePackage = "@dshthemes/core";
     private readonly AppPaths _paths;
     private readonly HarnessProcessService _server;
     private readonly NodeHelperService _helper;
@@ -28,21 +30,25 @@ public sealed class PluginService
                 var source = row.TryGetProperty("source", out var s) ? s.GetString() ?? "" : "";
                 var builtIn = row.TryGetProperty("builtIn", out var b) && b.GetBoolean();
                 var disabled = row.TryGetProperty("disabled", out var d) && d.GetBoolean();
-                list.Add(new PluginItem(id, package, source, "", builtIn, disabled));
+                var category = builtIn ? PluginCategory.Plugin : ClassifyInstalled(settings, package);
+                list.Add(new PluginItem(id, package, source, "", builtIn, disabled, category));
             }
         }
         if (response.RootElement.TryGetProperty("dependencies", out var dependencies))
         {
             foreach (var item in dependencies.EnumerateObject())
-                if (!list.Any(x => x.Source == item.Name))
-                    list.Add(new PluginItem(item.Name, item.Name, "用户依赖", item.Value.GetString() ?? "", false, false));
+                if (!list.Any(x => x.Package.Equals(item.Name, StringComparison.OrdinalIgnoreCase)))
+                {
+                    if (!_skills.PackageProvidesSkills(Path.GetDirectoryName(UserPluginDirectory(settings))!, item.Name)) continue;
+                    list.Add(new PluginItem(item.Name, item.Name, "用户 Skill 包", item.Value.GetString() ?? "", false, false, PluginCategory.Skill));
+                }
         }
         var storeManifest = Path.Combine(UserPackageRoot(settings), "package.json");
         if (File.Exists(storeManifest))
         {
             foreach (var item in ReadDependencyMap(storeManifest))
                 if (!list.Any(x => x.Package.Equals(item.Key, StringComparison.OrdinalIgnoreCase)))
-                    list.Add(new PluginItem(item.Key, item.Key, "用户 Skill 包", item.Value, false, false));
+                    list.Add(new PluginItem(item.Key, item.Key, "用户 Skill 包", item.Value, false, false, PluginCategory.Skill));
         }
         return list;
     }
@@ -50,6 +56,12 @@ public sealed class PluginService
     public string UserPluginDirectory(LauncherSettings settings) => Path.Combine(settings.DshHome, "profiles", "web", "node_modules");
     public string UserSkillPackageDirectory(LauncherSettings settings) => Path.Combine(UserPackageRoot(settings), "node_modules");
     public string OfficialPluginDirectory(LauncherSettings settings) => Path.Combine(_paths.VersionRoot(settings.CurrentRuntimeVersion), "app", "node_modules", "@deepseek-ai");
+
+    private PluginCategory ClassifyInstalled(LauncherSettings settings, string packageName)
+    {
+        var manifest = PluginClassificationService.ManifestPath(UserPluginDirectory(settings), packageName);
+        return PluginClassificationService.Classify(packageName, manifest);
+    }
 
     public void SyncStoredSkills(LauncherSettings settings)
     {
@@ -72,8 +84,9 @@ public sealed class PluginService
         catch { File.Copy(snapshot, _paths.LauncherPatch, true); throw; }
     }
 
-    public async Task<int> InstallAsync(LauncherSettings settings, string spec, bool linkLocal, CancellationToken cancellationToken = default)
+    public async Task<int> InstallAsync(LauncherSettings settings, string spec, bool linkLocal, IProgress<PluginInstallProgress>? progress = null, CancellationToken cancellationToken = default)
     {
+        progress?.Report(new PluginInstallProgress(3, "正在解析安装来源"));
         spec = NormalizeInstallSpec(spec);
         if (Directory.Exists(spec))
         {
@@ -83,7 +96,21 @@ public sealed class PluginService
                 throw new InvalidOperationException("不能把当前运行时的官方组件目录当作用户插件来源。 ");
             spec = (linkLocal ? "link:" : "file:") + localPath;
         }
-        return await RunManagedPluginCommandAsync(settings, $"add \"{ValidatePnpmArgument(spec)}\"", cancellationToken);
+        return await InstallManyAsync(settings, [spec], progress, cancellationToken);
+    }
+
+    public async Task<int> InstallManyAsync(LauncherSettings settings, IReadOnlyList<string> specs, IProgress<PluginInstallProgress>? progress = null, CancellationToken cancellationToken = default)
+    {
+        if (specs.Count == 0) throw new ArgumentException("至少需要一个插件来源。", nameof(specs));
+        var arguments = new List<string>(specs.Count);
+        foreach (var raw in specs)
+        {
+            var spec = NormalizeInstallSpec(raw);
+            if (Directory.Exists(spec)) spec = "file:" + Path.GetFullPath(spec).TrimEnd(Path.DirectorySeparatorChar);
+            arguments.Add($"\"{ValidatePnpmArgument(spec)}\"");
+        }
+        progress?.Report(new PluginInstallProgress(8, "正在准备 web profile"));
+        return await RunManagedPluginCommandAsync(settings, "add " + string.Join(' ', arguments), cancellationToken, progress);
     }
 
     public static string NormalizeInstallSpec(string input)
@@ -300,20 +327,32 @@ public sealed class PluginService
         return exit == 0 ? await RunManagedStoreCommandAsync(settings, "install", cancellationToken, false) : exit;
     }
 
-    private async Task<int> RunManagedPluginCommandAsync(LauncherSettings settings, string pnpmArguments, CancellationToken cancellationToken)
+    private async Task<int> RunManagedPluginCommandAsync(LauncherSettings settings, string pnpmArguments, CancellationToken cancellationToken, IProgress<PluginInstallProgress>? progress = null)
     {
         var profileDir = Path.Combine(settings.DshHome, "profiles", "web");
         var manifestPath = Path.Combine(profileDir, "package.json");
         if (!File.Exists(manifestPath))
         {
+            progress?.Report(new PluginInstallProgress(10, "正在初始化 web profile", "首次使用需要生成插件配置"));
             var initExit = await _server.RunCliAsync(settings, "--profile web --dump-default-config", line => _log.Info("profile", line), cancellationToken);
             if (initExit != 0 || !File.Exists(manifestPath)) throw new InvalidOperationException("web profile 初始化失败。");
         }
         var beforeDependencies = ReadDependencyNames(manifestPath);
         _log.Info("plugin", $"running managed pnpm {pnpmArguments}");
-        var exit = await _server.RunPnpmAsync(settings, pnpmArguments, profileDir, line => _log.Info("plugin", line), cancellationToken);
+        var outputLines = 0;
+        progress?.Report(new PluginInstallProgress(18, "正在下载并安装插件", "连接软件源…", true));
+        void Capture(string line)
+        {
+            _log.Info("plugin", line);
+            outputLines++;
+            var percentage = Math.Min(74, 20 + outputLines / 2);
+            progress?.Report(new PluginInstallProgress(percentage, DescribeInstallLine(line), CleanProgressDetail(line), false));
+        }
+        var exit = await _server.RunPnpmAsync(settings, pnpmArguments, profileDir, Capture, cancellationToken);
         if (exit != 0) return exit;
+        progress?.Report(new PluginInstallProgress(78, "正在挂载插件到 Harness", "校验插件清单与 bundle 配置"));
         using var response = await _helper.CallAsync(settings, new { op = "plugin.reconcile", beforeDependencies }, cancellationToken);
+        await RepairKnownBundleConflictsAsync(settings, cancellationToken);
         var plainPackages = response.RootElement.TryGetProperty("plain", out var plainResponse)
             ? plainResponse.EnumerateArray().Select(item => item.GetString()).Where(item => !string.IsNullOrWhiteSpace(item)).Select(item => item!).ToArray()
             : [];
@@ -330,7 +369,64 @@ public sealed class PluginService
             var unrecognized = plainElement.EnumerateArray().Select(item => item.GetString()).Where(item => !string.IsNullOrWhiteSpace(item) && !packagedSkills.Contains(item!, StringComparer.OrdinalIgnoreCase)).ToArray();
             if (unrecognized.Length > 0) _log.Warn("plugin", "installed dependencies without dsh.bundle or packaged Skill: " + string.Join(", ", unrecognized));
         }
+        progress?.Report(new PluginInstallProgress(88, "插件配置已验证", "正在刷新安装状态"));
         return 0;
+    }
+
+    public async Task<bool> RepairKnownBundleConflictsAsync(LauncherSettings settings, CancellationToken cancellationToken = default)
+    {
+        var manifestPath = Path.Combine(settings.DshHome, "profiles", "web", "package.json");
+        if (!File.Exists(manifestPath)) return false;
+        using var document = JsonDocument.Parse(await File.ReadAllTextAsync(manifestPath, cancellationToken));
+        var dependencies = document.RootElement.TryGetProperty("dependencies", out var dependencyElement)
+            ? dependencyElement.EnumerateObject().Select(item => item.Name).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : [];
+        var bundles = document.RootElement.TryGetProperty("dsh", out var dsh) &&
+                      dsh.TryGetProperty("profile", out var profile) &&
+                      profile.TryGetProperty("bundles", out var bundleElement)
+            ? bundleElement.EnumerateArray().Select(item => item.GetString() ?? string.Empty).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : [];
+        if (!dependencies.Contains(ThemesUiPackage) || !bundles.Contains(ThemesUiPackage) || !bundles.Contains(ThemesCorePackage)) return false;
+
+        await SetBundleIncludedAsync(settings, ThemesCorePackage, false, cancellationToken);
+        _log.Warn("plugin", "removed redundant @dshthemes/core bundle; @dshthemes/ui already registers the same themes");
+        return true;
+    }
+
+    public async Task SetBundleIncludedAsync(LauncherSettings settings, string packageName, bool included, CancellationToken cancellationToken = default)
+    {
+        var manifestPath = Path.Combine(settings.DshHome, "profiles", "web", "package.json");
+        if (!File.Exists(manifestPath)) throw new FileNotFoundException("web profile manifest does not exist.", manifestPath);
+        var snapshot = manifestPath + ".desktop-bak-" + DateTime.Now.ToString("yyyyMMddHHmmssfff");
+        File.Copy(manifestPath, snapshot, true);
+        try
+        {
+            using var _ = await _helper.CallAsync(settings, new { op = "profile.setBundleIncluded", package = packageName, included }, cancellationToken);
+            var exit = await _server.RunCliAsync(settings, $"--profile web --patch \"{_paths.LauncherPatch}\" --dump-config", line => _log.Info("config", line), cancellationToken);
+            if (exit != 0) throw new InvalidOperationException("插件组合配置验证失败。 ");
+        }
+        catch
+        {
+            File.Copy(snapshot, manifestPath, true);
+            throw;
+        }
+    }
+
+    private static string DescribeInstallLine(string line)
+    {
+        var value = line.ToLowerInvariant();
+        if (value.Contains("resolv")) return "正在解析依赖";
+        if (value.Contains("download")) return "正在下载依赖";
+        if (value.Contains("add") || value.Contains("package")) return "正在写入插件依赖";
+        if (value.Contains("build") || value.Contains("postinstall") || value.Contains("prepare")) return "正在执行插件构建脚本";
+        if (value.Contains("mirror") || value.Contains("镜像")) return "正在切换下载线路";
+        return "正在安装插件";
+    }
+
+    private static string CleanProgressDetail(string line)
+    {
+        var clean = LogService.Redact(line).Trim();
+        return clean.Length <= 180 ? clean : clean[..177] + "…";
     }
 
     private async Task<int> MigrateSkillPackagesAsync(LauncherSettings settings, string profileDir, string manifestPath, IReadOnlyCollection<string> packageNames, CancellationToken cancellationToken)

@@ -1,0 +1,44 @@
+name: Update plugin catalog
+
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: plugin-catalog
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Discover and verify Harness plugins
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/update-plugin-catalog.mjs
+
+      - name: Commit a changed catalog
+        shell: bash
+        run: |
+          if git diff --quiet -- catalog/plugin-index.json; then
+            echo "Catalog is already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add catalog/plugin-index.json
+          git commit -m "Update community plugin catalog"
+          git push

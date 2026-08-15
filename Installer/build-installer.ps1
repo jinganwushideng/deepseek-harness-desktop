@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.0.0",
+    [string]$Version = "1.1.1",
     [string]$MakeNsisPath = ""
 )
 
@@ -12,6 +12,8 @@ $outputDir = Join-Path $projectRoot "Release"
 $script = Join-Path $PSScriptRoot "DeepSeekHarnessDesktop.nsi"
 $runtimeSeed = Join-Path $projectRoot "DeepSeekHarnessDesktop\Assets\runtime.seed.zip"
 $prepareRuntime = Join-Path $projectRoot "scripts\prepare-runtime.ps1"
+$featuredSkinPayload = Join-Path $projectRoot "DeepSeekHarnessDesktop\Assets\FeaturedSkins\deep-whale-day-night-theme-v0.1.1.install.zip"
+$prepareFeaturedSkins = Join-Path $projectRoot "scripts\prepare-featured-skins.ps1"
 
 if (-not (Test-Path -LiteralPath $dotnet)) { $dotnet = (Get-Command dotnet -ErrorAction Stop).Source }
 if ([string]::IsNullOrWhiteSpace($MakeNsisPath)) {
@@ -33,6 +35,16 @@ if (-not (Test-Path -LiteralPath $runtimeSeed)) {
     }
     & $prepareRuntime
 }
+
+if (-not (Test-Path -LiteralPath $featuredSkinPayload)) {
+    if (-not (Test-Path -LiteralPath $prepareFeaturedSkins)) {
+        throw "缺少精选皮肤离线资源，也未找到 scripts\prepare-featured-skins.ps1。"
+    }
+    & $prepareFeaturedSkins
+}
+if (-not (Test-Path -LiteralPath $featuredSkinPayload)) {
+    throw "精选皮肤离线资源准备完成后仍不完整。"
+}
 if (-not (Test-Path -LiteralPath $runtimeSeed)) {
     throw "离线运行时准备完成后仍未找到 runtime.seed.zip。"
 }
@@ -40,7 +52,7 @@ if (-not (Test-Path -LiteralPath $runtimeSeed)) {
 New-Item -ItemType Directory -Path $publishDir -Force | Out-Null
 New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
 
-& $dotnet publish $appProject -c Release -r win-x64 --self-contained true -o $publishDir
+& $dotnet publish $appProject -c Release -r win-x64 --self-contained true -p:Version=$Version -p:FileVersion="$Version.0" -o $publishDir
 if ($LASTEXITCODE -ne 0) { throw "桌面壳发布失败，退出代码 $LASTEXITCODE。" }
 
 $appExe = Join-Path $publishDir "DeepSeekHarnessDesktop.exe"

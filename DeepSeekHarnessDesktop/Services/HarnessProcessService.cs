@@ -101,8 +101,19 @@ public sealed class HarnessProcessService : IDisposable
         var environment = new Dictionary<string, string>
         {
             ["DSH_HOME"] = settings.DshHome,
-            ["PATH"] = BuildManagedPath(settings, node)
+            ["PATH"] = BuildManagedPath(settings, node),
+            ["NPM_CONFIG_REGISTRY"] = ChinaMirrorService.OfficialNpmRegistry
         };
+        var lines = new List<string>();
+        ChinaMirrorService.ApplySystemProxyForOfficial(environment, new Uri(ChinaMirrorService.OfficialNpmRegistry));
+        void Capture(string line) { lines.Add(line); output?.Invoke(line); }
+        var exit = await RuntimeService.RunProcessAsync(node, $"\"{pnpm}\" {arguments}", workingDirectory, cancellationToken, Capture, environment);
+        if (exit == 0 || !ChinaMirrorService.LooksLikeNetworkFailure(lines)) return exit;
+
+        _log.Warn("network", $"npm registry network failure; retrying through {ChinaMirrorService.ChinaNpmRegistry}");
+        output?.Invoke("官方 npm 源连接失败，正在自动切换国内镜像重试…");
+        environment["NPM_CONFIG_REGISTRY"] = ChinaMirrorService.ChinaNpmRegistry;
+        ChinaMirrorService.ForceDirectConnection(environment);
         return await RuntimeService.RunProcessAsync(node, $"\"{pnpm}\" {arguments}", workingDirectory, cancellationToken, output, environment);
     }
 

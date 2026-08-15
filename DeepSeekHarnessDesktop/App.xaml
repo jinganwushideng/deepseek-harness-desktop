@@ -10,6 +10,8 @@
     <Geometry x:Key="NavGeneralIcon">M4,7 L20,7 M4,17 L20,17 M8,4 L8,10 M16,14 L16,20</Geometry>
     <Geometry x:Key="NavServerIcon">M5,4 L19,4 L19,20 L5,20 Z M8,8 L16,8 M8,12 L16,12 M8,16 L13,16</Geometry>
     <Geometry x:Key="NavPluginIcon">M9,4 L14,4 L14,9 L19,9 L19,14 L14,14 L14,20 L9,20 L9,15 L4,15 L4,10 L9,10 Z</Geometry>
+    <Geometry x:Key="NavSkinIcon">M12,3 C7,3 3,7 3,12 C3,17 7,21 12,21 C14,21 15,20 15,18 C15,16 13,16 13,14 C13,12 15,11 18,11 C20,11 21,10 21,8 C21,5 17,3 12,3 Z M7,11 L7.1,11 M9,7 L9.1,7 M14,7 L14.1,7</Geometry>
+    <Geometry x:Key="NavRepositoryIcon">M4,7 L12,3 L20,7 L20,19 L4,19 Z M4,8 L20,8 M8,12 L11,12 M8,15 L16,15</Geometry>
     <Geometry x:Key="NavSkillIcon">M7,3 L17,3 L19,5 L19,19 L17,21 L7,21 L5,19 L5,5 Z M9,8 L15,8 M9,12 L15,12 M9,16 L13,16 M3,8 L5,8 M19,8 L21,8</Geometry>
     <Geometry x:Key="NavDataIcon">M4,6 C4,3.5 20,3.5 20,6 C20,8.5 4,8.5 4,6 Z M4,6 L4,18 C4,20.5 20,20.5 20,18 L20,6 M4,12 C4,14.5 20,14.5 20,12</Geometry>
     <Geometry x:Key="NavLogsIcon">M5,5 L19,5 M5,10 L19,10 M5,15 L16,15 M5,20 L13,20</Geometry>
@@ -58,7 +60,7 @@
     <Style x:Key="TitleButton" TargetType="Button" BasedOn="{StaticResource IconButton}"/>
 
     <Style x:Key="PrimaryButton" TargetType="Button">
-      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="Foreground" Value="{DynamicResource AccentText}"/>
       <Setter Property="Background" Value="{DynamicResource Accent}"/>
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="Padding" Value="17,9"/>
@@ -129,7 +131,7 @@
           <ControlTemplate TargetType="CheckBox">
             <StackPanel Orientation="Horizontal">
               <Border x:Name="Box" Width="18" Height="18" CornerRadius="5" Background="{DynamicResource InputBg}" BorderBrush="{DynamicResource ControlBorder}" BorderThickness="1" VerticalAlignment="Center">
-                <Path x:Name="Check" Data="M3,7 L6,10 L12,4" Stroke="White" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed"/>
+                <Path x:Name="Check" Data="M3,7 L6,10 L12,4" Stroke="{DynamicResource AccentText}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed"/>
               </Border>
               <ContentPresenter Margin="9,0,0,0" VerticalAlignment="Center"/>
             </StackPanel>
@@ -160,6 +162,7 @@
     </Style>
     <Style TargetType="ListView">
       <Setter Property="Background" Value="{DynamicResource InputBg}"/><Setter Property="Foreground" Value="{DynamicResource Text}"/><Setter Property="BorderBrush" Value="{DynamicResource Border}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="3"/>
+      <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True"/><Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
       <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListView"><Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8"><ScrollViewer Padding="{TemplateBinding Padding}" Focusable="False"><ItemsPresenter/></ScrollViewer></Border></ControlTemplate></Setter.Value></Setter>
     </Style>
     <ControlTemplate x:Key="VerticalScrollBarTemplate" TargetType="ScrollBar"><Grid Background="Transparent" Margin="2"><Track x:Name="PART_Track" Orientation="Vertical" IsDirectionReversed="True"><Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False"/></Track.DecreaseRepeatButton><Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border x:Name="Thumb" Background="{DynamicResource ScrollThumb}" CornerRadius="4"/><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Thumb" Property="Background" Value="{DynamicResource ScrollThumbHover}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False"/></Track.IncreaseRepeatButton></Track></Grid></ControlTemplate>
@@ -224,7 +227,9 @@
             <Grid>
               <Grid.ColumnDefinitions><ColumnDefinition x:Name="SettingsSidebarColumn" Width="218"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
               <Border Background="{DynamicResource RailBg}" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,1,0" Padding="16,20">
-                <ItemsPresenter SnapsToDevicePixels="True"/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                  <ItemsPresenter SnapsToDevicePixels="True"/>
+                </ScrollViewer>
               </Border>
               <Border Grid.Column="1" Background="{DynamicResource Bg}">
                 <ContentPresenter ContentSource="SelectedContent"/>
@@ -264,6 +269,16 @@
           </ControlTemplate>
         </Setter.Value>
       </Setter>
+    </Style>
+    <Style x:Key="CompactChoice" TargetType="RadioButton" BasedOn="{StaticResource ThemeChoice}">
+      <Setter Property="Padding" Value="11,7"/>
+      <Setter Property="Margin" Value="0,0,6,0"/>
+      <Setter Property="MinWidth" Value="64"/>
+      <Setter Property="FontSize" Value="11"/>
+    </Style>
+    <Style x:Key="CompactDangerChoice" TargetType="RadioButton" BasedOn="{StaticResource CompactChoice}">
+      <Setter Property="Foreground" Value="{DynamicResource DangerText}"/>
+      <Setter Property="Margin" Value="0"/>
     </Style>
     </ResourceDictionary>
   </Application.Resources>

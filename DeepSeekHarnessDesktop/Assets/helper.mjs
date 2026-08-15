@@ -90,6 +90,22 @@ switch (request.op) {
     response = { bundles, dependencies: manifest.dependencies ?? {}, rows }
     break
   }
+  case 'profile.setBundleIncluded': {
+    if (typeof request.package !== 'string' || !request.package.trim()) throw new Error('package is required')
+    const manifest = bootModule.readProfileManifest('dsh', profileDir)
+    const bundles = [...(manifest?.dsh?.profile?.bundles ?? [])]
+    const index = bundles.indexOf(request.package)
+    if (request.included === true && index < 0) bundles.push(request.package)
+    if (request.included !== true) {
+      for (let i = bundles.length - 1; i >= 0; i--) {
+        if (bundles[i] === request.package) bundles.splice(i, 1)
+      }
+    }
+    manifest.dsh = { ...(manifest.dsh ?? {}), profile: { ...(manifest.dsh?.profile ?? {}), bundles } }
+    bootModule.writeProfileManifest(profileDir, manifest)
+    response = { ok: true, package: request.package, included: bundles.includes(request.package), bundles }
+    break
+  }
   case 'plugin.reconcile': {
     const manifest = bootModule.readProfileManifest('dsh', profileDir)
     const beforeDependencies = new Set(Array.isArray(request.beforeDependencies) ? request.beforeDependencies : [])

@@ -39,7 +39,47 @@ public sealed class CoreTests : IDisposable
         var settings = JsonSerializer.Deserialize<LauncherSettings>("{}");
         Assert.NotNull(settings);
         Assert.True(settings.NotifyOnResponseComplete);
+        Assert.True(settings.CheckUpdates);
+        Assert.Equal(string.Empty, settings.DismissedDesktopUpdateVersion);
         Assert.Equal(ShellThemeService.FollowWeb, settings.ShellThemeMode);
+        Assert.True(settings.FollowSkinAppearance);
+    }
+
+    [Theory]
+    [InlineData("1.0.1", "1.0.0", true)]
+    [InlineData("v2.0.0", "1.9.9", true)]
+    [InlineData("1.1.0-rc.2", "1.1.0-rc.1", true)]
+    [InlineData("1.1.0", "1.1.0-rc.9", true)]
+    [InlineData("1.0.0-rc.1", "1.0.0", false)]
+    [InlineData("1.0.0", "1.0.0", false)]
+    public void DesktopUpdateVersionComparison_FollowsSemVer(string candidate, string current, bool expected) =>
+        Assert.Equal(expected, DesktopUpdateService.IsNewerVersion(candidate, current));
+
+    [Fact]
+    public void DesktopUpdateAtomFallback_ReadsCanonicalRedirectedReleaseUrl()
+    {
+        const string xml = """
+            <feed xmlns="http://www.w3.org/2005/Atom">
+              <entry><updated>2026-08-15T00:00:00Z</updated><link rel="alternate" href="https://github.com/new-owner/deepseek-harness-desktop/releases/tag/v1.2.0"/><title>Desktop 1.2.0</title></entry>
+              <entry><updated>2026-08-14T00:00:00Z</updated><link rel="alternate" href="https://github.com/new-owner/deepseek-harness-desktop/releases/tag/v1.1.0"/><title>Desktop 1.1.0</title></entry>
+            </feed>
+            """;
+        var update = DesktopUpdateService.ReadAtomReleases(xml, "1.0.0");
+        Assert.NotNull(update);
+        Assert.Equal("1.2.0", update.Version);
+        Assert.Contains("new-owner", update.ReleaseUrl);
+    }
+
+    [Fact]
+    [Trait("Category", "NetworkIntegration")]
+    public async Task DesktopUpdateCheck_UsesPublicReleaseSourcesWithoutAuthentication()
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("DSH_RUN_UPDATE_NETWORK_INTEGRATION"), "1", StringComparison.Ordinal)) return;
+        var paths = new AppPaths(Path.Combine(_root, "desktop-update-network"));
+        paths.EnsureDirectories();
+        using var log = new LogService(paths);
+        var update = await new DesktopUpdateService(log).CheckAsync();
+        Assert.True(update is null || DesktopUpdateService.IsNewerVersion(update.Version, DesktopUpdateService.CurrentVersion));
     }
 
     [Theory]
@@ -73,6 +113,215 @@ public sealed class CoreTests : IDisposable
         Assert.True(WebThemeMonitor.TryReadMessage(WebThemeMonitor.LightMessage, out var light) && light);
         Assert.True(WebThemeMonitor.TryReadMessage(WebThemeMonitor.DarkMessage, out light) && !light);
         Assert.False(WebThemeMonitor.TryReadMessage("dsh-theme:unknown", out _));
+    }
+
+    [Fact]
+    public void WebThemeMonitor_ParsesValidatedSkinAppearance()
+    {
+        const string json = """{"kind":"dsh-appearance","isLight":true,"accent":"rgb(10, 20, 30)","background":"#ffffff","surface":"rgb(245,245,245)","border":"#dddddd","text":"rgb(20, 20, 20)","muted":"#777777","skinId":"china-blue"}""";
+        Assert.True(WebThemeMonitor.TryReadAppearanceJson(json, out var appearance));
+        Assert.True(appearance.IsLight);
+        Assert.Equal("china-blue", appearance.SkinId);
+        Assert.True(WebThemeMonitor.TryParseCssColor(appearance.Accent, out var accent));
+        Assert.Equal((byte)20, accent.G);
+        Assert.False(WebThemeMonitor.TryReadAppearanceJson("{\"kind\":\"other\"}", out _));
+    }
+
+    [Fact]
+    public void SkinPalette_RepairsWhiteAccentBordersAndUnreadableText()
+    {
+        var appearance = new WebSkinAppearance(false, "#ffffff", "#30394a", "#30394a", "#ffffff", "#ffffff", "#e8e8e8", "community");
+        var palette = ShellThemeService.BuildSkinPalette(appearance);
+        Assert.True(ShellThemeService.ContrastRatio(palette.Text, palette.Background) >= 4.5);
+        Assert.True(ShellThemeService.ContrastRatio(palette.AccentText, palette.Accent) >= 4.5);
+        Assert.True(ShellThemeService.ContrastRatio(palette.Border, palette.Background) <= 1.8);
+        Assert.True(ShellThemeService.ContrastRatio(palette.Surface, palette.Background) <= 1.38);
+        Assert.False(palette.Accent.R == 255 && palette.Accent.G == 255 && palette.Accent.B == 255);
+    }
+
+    [Fact]
+    public void WebThemeMonitor_UsesStableSemanticColorSampling()
+    {
+        Assert.Contains("cssVariable", WebThemeMonitor.Script, StringComparison.Ordinal);
+        Assert.Contains("colorful", WebThemeMonitor.Script, StringComparison.Ordinal);
+        Assert.Contains("setTimeout(emit, 480)", WebThemeMonitor.Script, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("@dshthemes/ui", "Skin")]
+    [InlineData("dsh-ui-appearance", "Skin")]
+    [InlineData("@liustack/modlens", "Plugin")]
+    public void PluginClassification_SeparatesSkins(string package, string expected) =>
+        Assert.Equal(expected, PluginClassificationService.Classify(package).ToString());
+
+    [Fact]
+    public void PluginCatalog_ValidatesFiltersAndPrefersChineseSummary()
+    {
+        var catalog = new PluginCatalog
+        {
+            SchemaVersion = 1,
+            GeneratedAt = DateTimeOffset.UtcNow,
+            Items =
+            [
+                new PluginCatalogItem { Id = "theme", Name = "Theme", Description = "English", DescriptionZh = "中文简介", InstallSpec = "theme@latest", Package = "theme", Category = PluginCategory.Skin, Verified = true, Popularity = 9 },
+                new PluginCatalogItem { Id = "tool", Name = "Tool", Description = "Developer tool", InstallSpec = "tool@latest", Package = "tool", Category = PluginCategory.DeveloperTool, Verified = true, Popularity = 20 }
+            ]
+        };
+        PluginRepositoryService.Validate(catalog);
+        var filtered = PluginRepositoryService.Filter(catalog, "中文", PluginCategory.Skin);
+        Assert.Single(filtered);
+        Assert.Equal("中文简介", filtered[0].DisplayDescription);
+    }
+
+    [Fact]
+    public void PluginCatalog_AllowsTrustedPreviewAndDropsUntrustedPreview()
+    {
+        var trusted = new PluginCatalogItem { Id = "trusted", Name = "Trusted", InstallSpec = "trusted@latest", Package = "trusted", PreviewImageUrl = "https://raw.githubusercontent.com/example/project/main/docs/preview.png" };
+        var untrusted = new PluginCatalogItem { Id = "untrusted", Name = "Untrusted", InstallSpec = "untrusted@latest", Package = "untrusted", PreviewImageUrl = "https://tracking.example/preview.png" };
+        var catalog = new PluginCatalog { SchemaVersion = 1, Items = [trusted, untrusted] };
+        PluginRepositoryService.Validate(catalog);
+        Assert.NotEmpty(trusted.PreviewImageUrl);
+        Assert.Empty(untrusted.PreviewImageUrl);
+        Assert.Contains("PluginPreviewPlaceholder.png", untrusted.PreviewImagePath, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PreviewImageValidation_AcceptsOnlyKnownRasterFormats()
+    {
+        Assert.Equal(".png", PluginPreviewService.DetectImageExtension([137, 80, 78, 71, 13, 10, 26, 10]));
+        Assert.Equal(".jpg", PluginPreviewService.DetectImageExtension([0xFF, 0xD8, 0xFF, 0xE0]));
+        Assert.Null(PluginPreviewService.DetectImageExtension([0x3C, 0x73, 0x76, 0x67]));
+    }
+
+    [Fact]
+    public void RepositoryPreview_FallsBackToGithubSocialImage()
+    {
+        var item = new PluginCatalogItem
+        {
+            RepositoryUrl = "https://github.com/example/project",
+            PreviewImageUrl = string.Empty
+        };
+        var preview = PluginPreviewService.ResolvePreviewUrl(item);
+        Assert.Equal("https://opengraph.githubassets.com/1/example/project", preview);
+        Assert.True(PluginRepositoryService.TryGetTrustedPreviewUri(preview, out _));
+    }
+
+    [Fact]
+    public void PluginAndCatalogState_ExposeInstalledAndEnabledLabels()
+    {
+        Assert.Equal("未启用", new PluginItem("skin", "skin", "user", "1.0", false, true, PluginCategory.Skin).StateText);
+        var catalog = new PluginCatalogItem { IsInstalled = true, IsEnabled = false };
+        Assert.Equal("已安装 · 未启用", catalog.InstallStateText);
+        Assert.Equal("启用", catalog.InstallActionText);
+        Assert.True(catalog.CanRunInstallAction);
+        catalog.IsEnabled = true;
+        Assert.Equal("已启用", catalog.InstallStateText);
+        Assert.False(catalog.CanRunInstallAction);
+    }
+
+    [Fact]
+    public void FeaturedSkinDefinitions_ArePinnedAndIndependentlyManaged()
+    {
+        Assert.Equal(2, FeaturedSkinService.Definitions.Count);
+        Assert.Contains(FeaturedSkinService.Definitions, item => item.PrimaryPackage == "@dsh-external/dsh-client-ui-skin-maid-atelier" && item.License.Contains("禁止商用"));
+        Assert.Contains(FeaturedSkinService.Definitions, item => item.PrimaryPackage == "@dshthemes/ui" && item.ManagedPackages.Contains("@dshthemes/core"));
+        Assert.Equal(2, FeaturedSkinService.Definitions.Select(item => item.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task FeaturedSkinPayloads_InstallIntoAnIsolatedProfileAndStayDisabled()
+    {
+        if (!string.Equals(Environment.GetEnvironmentVariable("DSH_RUN_FEATURED_SKIN_INTEGRATION"), "1", StringComparison.Ordinal)) return;
+        var paths = new AppPaths(Path.Combine(_root, "featured-skin-integration"));
+        paths.EnsureDirectories();
+        using var log = new LogService(paths);
+        var runtime = new RuntimeService(paths, log);
+        await runtime.EnsureSeedAsync();
+        var settings = new LauncherSettings
+        {
+            Initialized = true,
+            Workspace = Path.Combine(paths.Root, "workspace"),
+            DshHome = Path.Combine(paths.Root, "dsh-home"),
+            CurrentRuntimeVersion = RuntimeInfo.SeedVersion
+        };
+        Directory.CreateDirectory(settings.Workspace);
+        Directory.CreateDirectory(settings.DshHome);
+        using var server = new HarnessProcessService(paths, log);
+        var plugins = new PluginService(paths, server, new NodeHelperService(paths, log), log);
+        var featured = new FeaturedSkinService(paths, plugins, log);
+        Assert.True(featured.HasEmbeddedPayloads());
+        await featured.ApplyFirstRunChoicesAsync(settings, new Dictionary<string, FeaturedSkinSetupChoice>
+        {
+            [FeaturedSkinService.DeepWhaleId] = FeaturedSkinSetupChoice.KeepDisabled,
+            [FeaturedSkinService.ThemeCollectionId] = FeaturedSkinSetupChoice.KeepDisabled
+        });
+        var installed = await plugins.InspectAsync(settings);
+        Assert.Contains(installed, item => item.Package == "@dsh-external/dsh-client-ui-skin-maid-atelier" && item.Disabled);
+        Assert.Contains(installed, item => item.Package == "@dshthemes/ui" && item.Disabled);
+        Assert.DoesNotContain(installed, item => item.Package == "@dshthemes/core");
+        Assert.DoesNotContain(installed, item => item.Package == "clsx");
+        using (var profile = JsonDocument.Parse(File.ReadAllText(Path.Combine(settings.DshHome, "profiles", "web", "package.json"))))
+        {
+            var dependencies = profile.RootElement.GetProperty("dependencies");
+            Assert.True(dependencies.TryGetProperty("@dshthemes/core", out _));
+            var bundles = profile.RootElement.GetProperty("dsh").GetProperty("profile").GetProperty("bundles")
+                .EnumerateArray().Select(item => item.GetString()).ToArray();
+            Assert.Contains("@dshthemes/ui", bundles);
+            Assert.DoesNotContain("@dshthemes/core", bundles);
+        }
+
+        await featured.ApplyFirstRunChoicesAsync(settings, new Dictionary<string, FeaturedSkinSetupChoice>
+        {
+            [FeaturedSkinService.DeepWhaleId] = FeaturedSkinSetupChoice.KeepDisabled,
+            [FeaturedSkinService.ThemeCollectionId] = FeaturedSkinSetupChoice.Enable
+        });
+        installed = await plugins.InspectAsync(settings);
+        Assert.Contains(installed, item => item.Package == "@dshthemes/ui" && !item.Disabled);
+        Assert.DoesNotContain(installed, item => item.Package == "@dshthemes/core");
+    }
+
+    [Fact]
+    public void GeneratedPluginCatalog_IsValidAndContainsNoOfficialRuntimePackages()
+    {
+        using var stream = typeof(PluginRepositoryService).Assembly.GetManifestResourceStream("DeepSeekHarnessDesktop.plugin-index.json");
+        Assert.NotNull(stream);
+        var catalog = JsonSerializer.Deserialize<PluginCatalog>(stream!, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+        });
+        Assert.NotNull(catalog);
+        PluginRepositoryService.Validate(catalog!);
+        Assert.DoesNotContain(catalog!.Items, item => item.Package.StartsWith("@deepseek-ai/", StringComparison.OrdinalIgnoreCase));
+        Assert.True(catalog.Items.Count(item => item.Category == PluginCategory.Skin) >= 60);
+        Assert.Equal(PluginCategory.Skin, catalog.Items.Single(item => item.Package == "dsh-pixel-ui").Category);
+        Assert.Equal(PluginCategory.Skin, catalog.Items.Single(item => item.Package == "dsh-matugen").Category);
+    }
+
+    [Theory]
+    [InlineData("ERR_PNPM_META_FETCH_FAIL request failed", true)]
+    [InlineData("ETIMEDOUT registry.npmjs.org", true)]
+    [InlineData("package has no matching version", false)]
+    public void ChinaMirror_OnlyRetriesNetworkFailures(string line, bool expected) =>
+        Assert.Equal(expected, ChinaMirrorService.LooksLikeNetworkFailure([line]));
+
+    [Fact]
+    public void ChinaMirror_DirectRetryClearsAllProxyVariables()
+    {
+        var environment = new Dictionary<string, string> { ["HTTP_PROXY"] = "http://127.0.0.1:7890", ["https_proxy"] = "http://127.0.0.1:7890" };
+        ChinaMirrorService.ForceDirectConnection(environment);
+        Assert.Equal(string.Empty, environment["HTTP_PROXY"]);
+        Assert.Equal(string.Empty, environment["https_proxy"]);
+        Assert.Equal("*", environment["NO_PROXY"]);
+    }
+
+    [Fact]
+    public void OfficialRegistry_AutomaticallyUsesSystemProxy()
+    {
+        var environment = new Dictionary<string, string>();
+        ChinaMirrorService.ApplySystemProxyForOfficial(environment, new Uri(ChinaMirrorService.OfficialNpmRegistry), new WebProxy("http://127.0.0.1:7890"), considerProcessEnvironment: false);
+        Assert.Equal("http://127.0.0.1:7890/", environment["HTTPS_PROXY"]);
     }
 
     [Fact]
@@ -357,6 +606,17 @@ public sealed class CoreTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_root)) Directory.Delete(_root, true);
+        for (var attempt = 0; attempt < 4 && Directory.Exists(_root); attempt++)
+        {
+            try
+            {
+                Directory.Delete(_root, true);
+                return;
+            }
+            catch (IOException) when (attempt < 3) { Thread.Sleep(150); }
+            catch (UnauthorizedAccessException) when (attempt < 3) { Thread.Sleep(150); }
+            catch (IOException) { return; }
+            catch (UnauthorizedAccessException) { return; }
+        }
     }
 }

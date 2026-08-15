@@ -1,5 +1,5 @@
 param(
-    [string]$ReleaseTag = "v1.0.0",
+    [string]$ReleaseTag = "v1.1.1",
     [string]$Destination = "",
     [string]$SourcePath = "",
     [string]$Sha256 = "C1134FE86042895B781090C50054F050817E05C59321FB6597E5F691C505C608",
@@ -38,7 +38,7 @@ try {
         }
         Copy-Item -LiteralPath $source -Destination $temporary
     } else {
-        $url = "https://github.com/sunhong5542/deepseek-harness-desktop/releases/download/$ReleaseTag/runtime.seed.zip"
+        $url = "https://github.com/jinganwushideng/deepseek-harness-desktop/releases/download/$ReleaseTag/runtime.seed.zip"
         Write-Host "正在从 $url 下载离线运行时…"
         Invoke-WebRequest -Uri $url -OutFile $temporary -UseBasicParsing
     }

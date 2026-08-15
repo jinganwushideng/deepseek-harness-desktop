@@ -8,11 +8,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>DeepSeekHarnessDesktop</AssemblyName>
     <RootNamespace>DeepSeekHarnessDesktop</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.1.1</Version>
     <Product>DeepSeek Harness Desktop</Product>
+    <Authors>jinganwushideng</Authors>
+    <Company>jinganwushideng</Company>
+    <Copyright>Copyright © 2026 jinganwushideng</Copyright>
     <AssemblyTitle>DeepSeek Harness Desktop</AssemblyTitle>
     <Description>DeepSeek Harness 的本地 Windows 桌面壳与管理中心</Description>
-    <FileVersion>1.0.0.0</FileVersion>
+    <FileVersion>1.1.1.0</FileVersion>
     <ApplicationIcon>Assets\Harness.ico</ApplicationIcon>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
@@ -26,11 +29,25 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Assets\WhaleGirl-v2.png" />
+    <Resource Include="Assets\PluginPreviewPlaceholder.png" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Assets\runtime.seed.zip"
                       LogicalName="DeepSeekHarnessDesktop.runtime.seed.zip"
                       Condition="Exists('$(MSBuildProjectDirectory)\Assets\runtime.seed.zip')" />
     <EmbeddedResource Include="Assets\helper.mjs" LogicalName="DeepSeekHarnessDesktop.helper.mjs" />
+    <EmbeddedResource Include="..\catalog\plugin-index.json" LogicalName="DeepSeekHarnessDesktop.plugin-index.json" />
+    <EmbeddedResource Include="Assets\FeaturedSkins\deep-whale-day-night-theme-v0.1.1.install.zip"
+                      LogicalName="DeepSeekHarnessDesktop.featured.deep-whale.zip"
+                      Condition="Exists('$(MSBuildProjectDirectory)\Assets\FeaturedSkins\deep-whale-day-night-theme-v0.1.1.install.zip')" />
+    <EmbeddedResource Include="Assets\FeaturedSkins\dshthemes-ui-0.2.0.tgz"
+                      LogicalName="DeepSeekHarnessDesktop.featured.dshthemes-ui.tgz"
+                      Condition="Exists('$(MSBuildProjectDirectory)\Assets\FeaturedSkins\dshthemes-ui-0.2.0.tgz')" />
+    <EmbeddedResource Include="Assets\FeaturedSkins\dshthemes-core-0.2.0.tgz"
+                      LogicalName="DeepSeekHarnessDesktop.featured.dshthemes-core.tgz"
+                      Condition="Exists('$(MSBuildProjectDirectory)\Assets\FeaturedSkins\dshthemes-core-0.2.0.tgz')" />
+    <EmbeddedResource Include="Assets\FeaturedSkins\clsx-2.1.1.tgz"
+                      LogicalName="DeepSeekHarnessDesktop.featured.clsx.tgz"
+                      Condition="Exists('$(MSBuildProjectDirectory)\Assets\FeaturedSkins\clsx-2.1.1.tgz')" />
   </ItemGroup>
 </Project>

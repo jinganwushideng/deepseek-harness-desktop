@@ -12,6 +12,7 @@ public sealed class RuntimeService
     private readonly AppPaths _paths;
     private readonly LogService _log;
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(20) };
+    private readonly HttpClient _directHttp = new(new HttpClientHandler { UseProxy = false }) { Timeout = TimeSpan.FromSeconds(20) };
 
     public RuntimeService(AppPaths paths, LogService log) { _paths = paths; _log = log; }
     public bool IsInstalled(string version) => File.Exists(_paths.NodeExe(version)) && File.Exists(_paths.DshBin(version));
@@ -61,7 +62,13 @@ public sealed class RuntimeService
 
     public async Task<string?> CheckLatestAsync(CancellationToken cancellationToken = default)
     {
-        var json = await _http.GetStringAsync("https://registry.npmjs.org/@deepseek-ai%2Fdsh/latest", cancellationToken);
+        string json;
+        try { json = await _http.GetStringAsync("https://registry.npmjs.org/@deepseek-ai%2Fdsh/latest", cancellationToken); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            _log.Warn("network", "npm metadata switched to China-accessible mirror: " + ex.Message);
+            json = await _directHttp.GetStringAsync("https://registry.npmmirror.com/@deepseek-ai%2Fdsh/latest", cancellationToken);
+        }
         using var document = JsonDocument.Parse(json);
         return document.RootElement.TryGetProperty("version", out var version) ? version.GetString() : null;
     }
@@ -77,8 +84,20 @@ public sealed class RuntimeService
         Directory.CreateDirectory(Path.Combine(stage, "app"));
         progress?.Report($"正在安装 DeepSeek Harness {version}…");
         var npm = Path.Combine(stage, "node", "npm.cmd");
-        var exit = await RunProcessAsync(npm, $"install --prefix \"{Path.Combine(stage, "app")}\" --no-audit --no-fund --save-exact \"@deepseek-ai/dsh@{version}\" \"pnpm@11.19.0\"", stage, cancellationToken,
-            line => { _log.Info("npm", line); progress?.Report(line); });
+        var installArguments = $"install --prefix \"{Path.Combine(stage, "app")}\" --no-audit --no-fund --save-exact \"@deepseek-ai/dsh@{version}\" \"pnpm@11.19.0\"";
+        var lines = new List<string>();
+        void Capture(string line) { lines.Add(line); _log.Info("npm", line); progress?.Report(line); }
+        var environment = new Dictionary<string, string> { ["NPM_CONFIG_REGISTRY"] = ChinaMirrorService.OfficialNpmRegistry };
+        ChinaMirrorService.ApplySystemProxyForOfficial(environment, new Uri(ChinaMirrorService.OfficialNpmRegistry));
+        var exit = await RunProcessAsync(npm, installArguments, stage, cancellationToken, Capture, environment);
+        if (exit != 0 && ChinaMirrorService.LooksLikeNetworkFailure(lines))
+        {
+            progress?.Report("官方 npm 源连接失败，正在自动切换国内镜像重试…");
+            _log.Warn("network", "runtime install switched to China-accessible npm mirror");
+            environment["NPM_CONFIG_REGISTRY"] = ChinaMirrorService.ChinaNpmRegistry;
+            ChinaMirrorService.ForceDirectConnection(environment);
+            exit = await RunProcessAsync(npm, installArguments, stage, cancellationToken, Capture, environment);
+        }
         if (exit != 0 || !File.Exists(Path.Combine(stage, "app", "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js")))
             throw new InvalidOperationException($"Harness {version} 安装失败，npm 退出代码 {exit}。");
         await MoveDirectoryWithRetryAsync(stage, _paths.VersionRoot(version), cancellationToken);

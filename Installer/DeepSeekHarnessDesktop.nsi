@@ -1,7 +1,7 @@
 Unicode true
 
 !ifndef APP_VERSION
-  !define APP_VERSION "1.0.0"
+  !define APP_VERSION "1.1.1"
 !endif
 !ifndef PUBLISH_DIR
   !error "PUBLISH_DIR is required"
@@ -13,7 +13,7 @@ Unicode true
 !define APP_NAME "DeepSeek Harness Desktop"
 !define APP_EXE "DeepSeekHarnessDesktop.exe"
 !define APP_ID "DeepSeekHarnessDesktop"
-!define COMPANY_NAME "sunhong5542"
+!define COMPANY_NAME "jinganwushideng"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_ID}"
 
 Name "${APP_NAME}"
@@ -35,7 +35,7 @@ VIAddVersionKey /LANG=2052 "ProductVersion" "${APP_VERSION}"
 VIAddVersionKey /LANG=2052 "FileDescription" "DeepSeek Harness 桌面壳安装程序"
 VIAddVersionKey /LANG=2052 "FileVersion" "${APP_VERSION}"
 VIAddVersionKey /LANG=2052 "CompanyName" "${COMPANY_NAME}"
-VIAddVersionKey /LANG=2052 "LegalCopyright" "Copyright © 2026 sunhong5542"
+VIAddVersionKey /LANG=2052 "LegalCopyright" "Copyright © 2026 jinganwushideng"
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"

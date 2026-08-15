@@ -17,6 +17,8 @@ public sealed class AppPaths
     public string Logs => Path.Combine(Root, "logs");
     public string Backups => Path.Combine(Root, "backups");
     public string WebViewData => Path.Combine(Root, "webview-data");
+    public string PluginCatalogCache => Path.Combine(Root, "plugin-catalog.json");
+    public string PluginPreviewCache => Path.Combine(Root, "catalog-images");
     public string Helper => Path.Combine(Runtime, "helper.mjs");
     public string VersionRoot(string version) => Path.Combine(Versions, version);
     public string NodeExe(string version) => Path.Combine(VersionRoot(version), "node", "node.exe");
@@ -34,6 +36,7 @@ public sealed class AppPaths
         Directory.CreateDirectory(Logs);
         Directory.CreateDirectory(Backups);
         Directory.CreateDirectory(WebViewData);
+        Directory.CreateDirectory(PluginPreviewCache);
         if (!File.Exists(LauncherPatch)) File.WriteAllText(LauncherPatch, "[]\n");
     }
 }

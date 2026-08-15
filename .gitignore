@@ -13,6 +13,7 @@ TestResults/
 
 # Offline runtime and downloaded archives
 DeepSeekHarnessDesktop/Assets/runtime.seed.zip
+DeepSeekHarnessDesktop/Assets/FeaturedSkins/
 *.nupkg
 *.zip
 

@@ -5,6 +5,7 @@
   <SolidColorBrush x:Key="Panel2" Color="#EEF0F4"/>
   <SolidColorBrush x:Key="Border" Color="#D9DDE5"/>
   <SolidColorBrush x:Key="Accent" Color="#6273F2"/>
+  <SolidColorBrush x:Key="AccentText" Color="#FAFBFD"/>
   <SolidColorBrush x:Key="Text" Color="#171A20"/>
   <SolidColorBrush x:Key="Muted" Color="#6D7480"/>
   <SolidColorBrush x:Key="ChromeBg" Color="#FCFCFD"/>
