@@ -4,7 +4,7 @@
   <p>A Windows desktop shell and local management center for DeepSeek Harness</p>
 </div>
 
-[中文](README.md) · [Download the prerelease](https://github.com/jinganwushideng/deepseek-harness-desktop/releases/tag/v1.1.2)
+[中文](README.md) · [Download the prerelease](https://github.com/jinganwushideng/deepseek-harness-desktop/releases/tag/v1.1.3)
 
 > [!IMPORTANT]
 > This is an unofficial community project. It is not affiliated with or endorsed by DeepSeek. DeepSeek, DeepSeek Harness, and related names belong to their respective owners.
@@ -29,7 +29,7 @@
 
 ## Install
 
-1. Download `DeepSeek-Harness-Desktop-Setup-1.1.2.exe` from [Releases](https://github.com/jinganwushideng/deepseek-harness-desktop/releases).
+1. Download `DeepSeek-Harness-Desktop-Setup-1.1.3.exe` from [Releases](https://github.com/jinganwushideng/deepseek-harness-desktop/releases).
 2. Run the installer. It installs per user to `%LOCALAPPDATA%\Programs\DeepSeek Harness Desktop` and does not require administrator rights.
 3. On first launch, select a workspace, DSH_HOME, and local port, then configure model API keys as needed.
 

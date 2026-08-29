@@ -56,7 +56,7 @@ public sealed class HarnessProcessService : IDisposable
             Directory.CreateDirectory(settings.DshHome);
 
             Report(StartupStage.StartingProcess, 30, "正在启动 Harness 进程", Path.GetFileName(node));
-            var arguments = $"\"{bin}\" --profile web --patch \"{_paths.LauncherPatch}\" --host 127.0.0.1 --port {settings.Port}";
+            var arguments = BuildServerArguments(bin, _paths.LauncherPatch, settings.Port, settings.CurrentRuntimeVersion);
             var start = new ProcessStartInfo(node, arguments)
             {
                 WorkingDirectory = settings.Workspace, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true,
@@ -159,6 +159,12 @@ public sealed class HarnessProcessService : IDisposable
         _paths.PnpmBinDir(settings.CurrentRuntimeVersion),
         Path.GetDirectoryName(node),
         Environment.GetEnvironmentVariable("PATH"));
+
+    internal static string BuildServerArguments(string bin, string patch, int port, string runtimeVersion)
+    {
+        var noOpen = DesktopUpdateService.CompareVersions(runtimeVersion, "0.1.1-rc.2") >= 0 ? " --no-open" : string.Empty;
+        return $"\"{bin}\" --profile web --patch \"{patch}\" --host 127.0.0.1 --port {port}{noOpen}";
+    }
 
     private async Task<bool> WaitHealthyAsync(int port, TimeSpan timeout, CancellationToken cancellationToken)
     {

@@ -1,7 +1,7 @@
 Unicode true
 
 !ifndef APP_VERSION
-  !define APP_VERSION "1.1.2"
+  !define APP_VERSION "1.1.3"
 !endif
 !ifndef PUBLISH_DIR
   !error "PUBLISH_DIR is required"

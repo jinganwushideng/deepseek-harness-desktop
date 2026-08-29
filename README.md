@@ -4,7 +4,7 @@
   <p>DeepSeek Harness 的 Windows 桌面壳与本地管理中心</p>
 </div>
 
-[English](README.en.md) · [下载预发布版](https://github.com/jinganwushideng/deepseek-harness-desktop/releases/tag/v1.1.2)
+[English](README.en.md) · [下载预发布版](https://github.com/jinganwushideng/deepseek-harness-desktop/releases/tag/v1.1.3)
 
 > [!IMPORTANT]
 > 本项目是非官方社区项目，与 DeepSeek 没有隶属或背书关系。DeepSeek、DeepSeek Harness 及相关名称归其各自权利人所有。
@@ -28,7 +28,7 @@
 
 ## 安装
 
-1. 从 [Releases](https://github.com/jinganwushideng/deepseek-harness-desktop/releases) 下载 `DeepSeek-Harness-Desktop-Setup-1.1.2.exe`。
+1. 从 [Releases](https://github.com/jinganwushideng/deepseek-harness-desktop/releases) 下载 `DeepSeek-Harness-Desktop-Setup-1.1.3.exe`。
 2. 运行安装程序。它按当前用户安装到 `%LOCALAPPDATA%\Programs\DeepSeek Harness Desktop`，不需要管理员权限。
 3. 首次启动选择工作目录、DSH_HOME 和端口，然后按需设置模型 API Key。
 

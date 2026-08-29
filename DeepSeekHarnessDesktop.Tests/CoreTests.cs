@@ -482,6 +482,19 @@ public sealed class CoreTests : IDisposable
     }
 
     [Fact]
+    public void HarnessStartupArguments_DisableCliBrowserWhenSupported()
+    {
+        var current = HarnessProcessService.BuildServerArguments("D:/runtime/bin.js", "D:/launcher.patch.yml", 3080, "0.1.1-rc.2");
+        var future = HarnessProcessService.BuildServerArguments("D:/runtime/bin.js", "D:/launcher.patch.yml", 3080, "0.2.0");
+        var legacy = HarnessProcessService.BuildServerArguments("D:/runtime/bin.js", "D:/launcher.patch.yml", 3080, "0.1.0-rc.6");
+        Assert.Contains("--no-open", current, StringComparison.Ordinal);
+        Assert.Contains("--no-open", future, StringComparison.Ordinal);
+        Assert.DoesNotContain("--no-open", legacy, StringComparison.Ordinal);
+        Assert.Contains("--host 127.0.0.1", current, StringComparison.Ordinal);
+        Assert.Contains("--port 3080", current, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ConnectionSettings_AreTrimmedAndNormalized()
     {
         var workspace = Path.Combine(_root, "workspace");
