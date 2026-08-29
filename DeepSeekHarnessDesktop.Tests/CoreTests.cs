@@ -40,6 +40,7 @@ public sealed class CoreTests : IDisposable
         Assert.NotNull(settings);
         Assert.True(settings.NotifyOnResponseComplete);
         Assert.True(settings.CheckUpdates);
+        Assert.Equal(RuntimeUpdateSource.Auto, settings.HarnessUpdateSource);
         Assert.Equal(string.Empty, settings.DismissedDesktopUpdateVersion);
         Assert.Equal(ShellThemeService.FollowWeb, settings.ShellThemeMode);
         Assert.True(settings.FollowSkinAppearance);
@@ -293,6 +294,7 @@ public sealed class CoreTests : IDisposable
         });
         Assert.NotNull(catalog);
         PluginRepositoryService.Validate(catalog!);
+        Assert.InRange(catalog!.Items.Count, 1, PluginRepositoryService.MaxCatalogItems);
         Assert.DoesNotContain(catalog!.Items, item => item.Package.StartsWith("@deepseek-ai/", StringComparison.OrdinalIgnoreCase));
         Assert.True(catalog.Items.Count(item => item.Category == PluginCategory.Skin) >= 60);
         Assert.Equal(PluginCategory.Skin, catalog.Items.Single(item => item.Package == "dsh-pixel-ui").Category);
@@ -325,13 +327,147 @@ public sealed class CoreTests : IDisposable
     }
 
     [Fact]
-    public void ResponseCompletionMonitor_UsesHarnessRunningSignals()
+    public void RuntimeUpdateSourcePlans_RespectManualChoiceAndAutomaticFallback()
     {
-        Assert.Contains("data-streaming", ResponseCompletionMonitor.Script, StringComparison.Ordinal);
-        Assert.Contains("停止生成", ResponseCompletionMonitor.Script, StringComparison.Ordinal);
-        Assert.Contains("stop generating", ResponseCompletionMonitor.Script, StringComparison.Ordinal);
-        Assert.True(ResponseCompletionMonitor.IsCompletionMessage(ResponseCompletionMonitor.CompletionMessage));
-        Assert.False(ResponseCompletionMonitor.IsCompletionMessage("other-message"));
+        Assert.Equal([RuntimeUpdateSource.Official], RuntimeService.GetInstallSourcePlan(RuntimeUpdateSource.Official, RuntimeUpdateSource.ChinaMirror));
+        Assert.Equal([RuntimeUpdateSource.ChinaMirror], RuntimeService.GetInstallSourcePlan(RuntimeUpdateSource.ChinaMirror, RuntimeUpdateSource.Official));
+        Assert.Equal([RuntimeUpdateSource.ChinaMirror, RuntimeUpdateSource.Official], RuntimeService.GetInstallSourcePlan(RuntimeUpdateSource.Auto, RuntimeUpdateSource.ChinaMirror));
+        Assert.Equal([RuntimeUpdateSource.Official, RuntimeUpdateSource.ChinaMirror], RuntimeService.GetInstallSourcePlan(RuntimeUpdateSource.Auto, RuntimeUpdateSource.Official));
+    }
+
+    [Fact]
+    public void RuntimePeerClosure_FindsRequiredPeersButSkipsOptionalPeers()
+    {
+        var app = Path.Combine(_root, "peer-closure-app");
+        var package = Path.Combine(app, "node_modules", "example-parent");
+        Directory.CreateDirectory(package);
+        File.WriteAllText(Path.Combine(package, "package.json"), """
+            {
+              "name": "example-parent",
+              "peerDependencies": {
+                "required-peer": "^1.2.0",
+                "optional-peer": "^2.0.0"
+              },
+              "peerDependenciesMeta": {
+                "optional-peer": { "optional": true }
+              }
+            }
+            """);
+
+        var missing = RuntimeService.FindMissingPeerDependencies(app);
+        Assert.Equal("^1.2.0", missing["required-peer"]);
+        Assert.DoesNotContain("optional-peer", missing.Keys);
+
+        var installedPeer = Path.Combine(app, "node_modules", "required-peer");
+        Directory.CreateDirectory(installedPeer);
+        File.WriteAllText(Path.Combine(installedPeer, "package.json"), "{\"name\":\"required-peer\",\"version\":\"1.2.3\"}");
+        Assert.Empty(RuntimeService.FindMissingPeerDependencies(app));
+    }
+
+    [Fact]
+    public void HarnessEventMonitor_UsesOfficialCompletedTurnEvent()
+    {
+        var completed = """
+            {"rpcId":"frame-1","payload":{"type":"session/event","sessionId":"session-1","event":{"type":"turn/end","data":{"turn":3,"reason":{"kind":"completed"}}}}}
+            """;
+        Assert.True(HarnessEventMonitor.TryParseCompletedTurn(completed, out var result));
+        Assert.Equal("session-1", result.SessionId);
+        Assert.Equal(3, result.Turn);
+        Assert.Equal("completed", result.Reason);
+
+        var interrupted = completed.Replace("completed", "interrupted", StringComparison.Ordinal);
+        Assert.False(HarnessEventMonitor.TryParseCompletedTurn(interrupted, out _));
+        Assert.False(HarnessEventMonitor.TryParseCompletedTurn("not-json", out _));
+    }
+
+    [Fact]
+    public async Task StartupFailure_ReportsExactStageAndSuggestion()
+    {
+        var root = Path.Combine(_root, "startup-failure");
+        var paths = new AppPaths(root);
+        paths.EnsureDirectories();
+        using var log = new LogService(paths);
+        using var server = new HarnessProcessService(paths, log);
+        var stages = new List<StartupStage>();
+        server.StartupProgressChanged += progress => stages.Add(progress.Stage);
+        var settings = new LauncherSettings
+        {
+            Initialized = true,
+            Workspace = Path.Combine(root, "workspace"),
+            DshHome = Path.Combine(root, "home"),
+            CurrentRuntimeVersion = "missing-runtime",
+            Port = GetFreePort()
+        };
+
+        await Assert.ThrowsAsync<FileNotFoundException>(() => server.StartAsync(settings));
+        Assert.Contains(StartupStage.ValidatingSettings, stages);
+        Assert.Contains(StartupStage.CheckingRuntime, stages);
+        Assert.Equal(StartupStage.CheckingRuntime, server.LastFailure?.Stage);
+        Assert.Equal(ServerState.Faulted, server.State);
+        Assert.Contains("重装", server.LastFailure?.Suggestion ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DiagnosticBundle_IsZipAndExcludesSecretsAndPrivatePaths()
+    {
+        var root = Path.Combine(_root, "diagnostics");
+        var paths = new AppPaths(root);
+        paths.EnsureDirectories();
+        var home = Path.Combine(root, "private-home");
+        var workspace = Path.Combine(root, "private-workspace");
+        Directory.CreateDirectory(home);
+        Directory.CreateDirectory(workspace);
+        Directory.CreateDirectory(Path.Combine(home, "profiles", "web"));
+        File.WriteAllText(Path.Combine(home, ".credentials.yaml"), "provider:\n  apiKey: super-secret-value-123\n");
+        File.WriteAllText(Path.Combine(home, "settings.yaml"), "appSecret: another-secret-value-456\npath: " + home);
+        File.WriteAllText(Path.Combine(home, "profiles", "web", "package.json"), "{\"name\":\"test-profile\"}");
+        File.WriteAllText(paths.Config, JsonSerializer.Serialize(new LauncherSettings { Workspace = workspace, DshHome = home }));
+        using var log = new LogService(paths);
+        log.Error("test", "token=super-secret-value-123 path=" + home);
+        var runtime = new RuntimeService(paths, log);
+        using var server = new HarnessProcessService(paths, log);
+        var diagnostics = new DiagnosticService(paths, runtime, server, log);
+        var settings = new LauncherSettings { Workspace = workspace, DshHome = home };
+
+        var zip = await diagnostics.ExportBundleAsync(settings, "apiKey=another-secret-value-456\n" + workspace);
+        Assert.True(File.Exists(zip));
+        using var archive = ZipFile.OpenRead(zip);
+        Assert.DoesNotContain(archive.Entries, entry => entry.FullName.Contains("credentials", StringComparison.OrdinalIgnoreCase));
+        var combined = string.Join("\n", archive.Entries.Where(entry => entry.Length < 1024 * 1024).Select(entry =>
+        {
+            using var reader = new StreamReader(entry.Open());
+            return reader.ReadToEnd();
+        }));
+        Assert.DoesNotContain("super-secret-value-123", combined, StringComparison.Ordinal);
+        Assert.DoesNotContain("another-secret-value-456", combined, StringComparison.Ordinal);
+        Assert.DoesNotContain(home, combined, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(workspace, combined, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("%DSH_HOME%", combined, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CatalogDetailNavigation_OnlyKeepsSameHttpsOriginEmbedded()
+    {
+        var origin = new Uri("https://github.com/example/project");
+        Assert.True(CatalogDetailWindow.IsSafeRepositoryUri(origin));
+        Assert.True(CatalogDetailWindow.IsSameOrigin(origin, new Uri("https://github.com/example/project/issues")));
+        Assert.False(CatalogDetailWindow.IsSameOrigin(origin, new Uri("https://example.com/redirect")));
+        Assert.False(CatalogDetailWindow.IsSameOrigin(origin, new Uri("http://github.com/example/project")));
+        Assert.False(CatalogDetailWindow.IsSafeRepositoryUri(new Uri("file:///C:/temp/readme.html")));
+    }
+
+    [Fact]
+    public async Task SecondInstance_NotifiesPrimaryInsteadOfShowingAnotherWindow()
+    {
+        var suffix = "test-" + Guid.NewGuid().ToString("N");
+        using var primary = new SingleInstanceCoordinator(suffix);
+        Assert.True(primary.IsPrimary);
+        var activated = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        primary.StartListening(() => activated.TrySetResult());
+        using var secondary = new SingleInstanceCoordinator(suffix);
+        Assert.False(secondary.IsPrimary);
+        Assert.True(await secondary.NotifyPrimaryAsync());
+        await activated.Task.WaitAsync(TimeSpan.FromSeconds(4));
     }
 
     [Fact]
@@ -411,6 +547,7 @@ public sealed class CoreTests : IDisposable
     [InlineData("yarn add @scope/tool@1.2.3", "@scope/tool@1.2.3")]
     [InlineData("bun add git+https://example.com/owner/repo.git", "git+https://example.com/owner/repo.git")]
     [InlineData("https://github.com/owner/repo", "git+https://github.com/owner/repo.git")]
+    [InlineData("https://github.com/openllmsh/dsh", "git+https://github.com/openllmsh/dsh.git")]
     [InlineData("https://github.com/owner/repo/tree/v1.2.3", "git+https://github.com/owner/repo.git#v1.2.3")]
     [InlineData("https://gitlab.com/group/subgroup/repo/-/tree/main", "git+https://gitlab.com/group/subgroup/repo.git#main")]
     [InlineData("https://bitbucket.org/owner/repo/src/develop", "git+https://bitbucket.org/owner/repo.git#develop")]
@@ -602,6 +739,13 @@ public sealed class CoreTests : IDisposable
         var log = new LogService(paths);
         var settings = new LauncherSettings { DshHome = Path.Combine(paths.Root, "home"), Workspace = paths.Root };
         return (paths, log, new BackupService(paths, log), settings);
+    }
+
+    private static int GetFreePort()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        return ((IPEndPoint)listener.LocalEndpoint).Port;
     }
 
     public void Dispose()

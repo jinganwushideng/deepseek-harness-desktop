@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <DesktopVersion>1.1.2</DesktopVersion>
+    <RuntimeSeedReleaseTag>v1.1.2</RuntimeSeedReleaseTag>
+  </PropertyGroup>
+</Project>

@@ -10,6 +10,7 @@ namespace DeepSeekHarnessDesktop.Services;
 public sealed class PluginRepositoryService : IDisposable
 {
     public const string CatalogUrl = "https://raw.githubusercontent.com/jinganwushideng/deepseek-harness-desktop/main/catalog/plugin-index.json";
+    internal const int MaxCatalogItems = 20_000;
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromHours(24);
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -87,7 +88,7 @@ public sealed class PluginRepositoryService : IDisposable
     public static void Validate(PluginCatalog catalog)
     {
         if (catalog.SchemaVersion != 1) throw new InvalidDataException("不支持的插件目录版本。");
-        if (catalog.Items.Count is < 1 or > 1000) throw new InvalidDataException("插件目录数量异常。");
+        if (catalog.Items.Count is < 1 or > MaxCatalogItems) throw new InvalidDataException("插件目录数量异常。");
         catalog.DiscoverySources = catalog.DiscoverySources.Take(10).Select(value => Clean(value, 160, "目录来源")).ToList();
         var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in catalog.Items)

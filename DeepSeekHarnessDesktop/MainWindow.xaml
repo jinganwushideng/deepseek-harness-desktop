@@ -34,6 +34,42 @@
           <Button x:Name="RefreshButton" AutomationProperties.Name="刷新 Harness" Style="{StaticResource IconButton}" ToolTip="刷新 Harness" Click="RefreshButton_Click">
             <Path Data="M21,12 A9,9 0 1 1 18.36,5.64 L21,8 M21,3 L21,8 L16,8" Stroke="{Binding Foreground,RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.75" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="18" Height="18" Stretch="Uniform"/>
           </Button>
+          <Button x:Name="UpdateCenterButton" AutomationProperties.Name="有可用更新" Style="{StaticResource IconButton}" ToolTip="查看可用更新" Visibility="Collapsed" Click="UpdateCenterButton_Click">
+            <Grid Width="22" Height="22">
+              <Path Data="M12,3 L12,14 M7.5,10 L12,14.5 L16.5,10 M5,19 L19,19" Stroke="{Binding Foreground,RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="17" Height="17" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              <Border Background="#FF5C70" CornerRadius="7" MinWidth="13" Height="13" Padding="3,0" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-3,0">
+                <TextBlock x:Name="UpdateCenterBadgeText" Text="1" Foreground="White" FontSize="8" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+            </Grid>
+          </Button>
+          <Popup x:Name="UpdateCenterPopup" PlacementTarget="{Binding ElementName=UpdateCenterButton}" Placement="Bottom" HorizontalOffset="-330" VerticalOffset="5" AllowsTransparency="True" StaysOpen="False" PopupAnimation="Fade">
+            <Border Width="410" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="14" Padding="16">
+              <Border.Effect><DropShadowEffect BlurRadius="22" ShadowDepth="5" Opacity="0.32" Color="#000000"/></Border.Effect>
+              <StackPanel>
+                <TextBlock Text="可用更新" FontSize="16" FontWeight="SemiBold"/>
+                <TextBlock Text="桌面壳与 Harness 分别更新，安装前都需要你确认。" Foreground="{DynamicResource Muted}" FontSize="10" Margin="0,4,0,13"/>
+                <Border x:Name="DesktopUpdateBubbleCard" Background="{DynamicResource OfficialPanel}" BorderBrush="{DynamicResource OfficialBorder}" BorderThickness="1" CornerRadius="11" Padding="12" Visibility="Collapsed">
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="54"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <Border Width="46" Height="46" CornerRadius="12" Background="{DynamicResource LogoBackdrop}" ClipToBounds="True"><Image Source="Assets/WhaleGirl-v2.png" Stretch="UniformToFill"/></Border>
+                    <StackPanel Grid.Column="1" Margin="11,0,10,0" VerticalAlignment="Center"><TextBlock Text="桌面壳更新" FontWeight="SemiBold"/><TextBlock x:Name="DesktopUpdateBubbleText" Foreground="{DynamicResource Muted}" FontSize="10" TextWrapping="Wrap" Margin="0,3,0,0"/></StackPanel>
+                    <Button Grid.Column="2" Style="{StaticResource PrimaryButton}" Content="查看" Padding="12,6" MinHeight="30" VerticalAlignment="Center" Click="OpenDesktopUpdateFromBubble_Click"/>
+                  </Grid>
+                </Border>
+                <Border x:Name="HarnessUpdateBubbleCard" Background="{DynamicResource SuccessIconBg}" BorderBrush="{DynamicResource SuccessBadgeBg}" BorderThickness="1" CornerRadius="11" Padding="12" Margin="0,9,0,0" Visibility="Collapsed">
+                  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="54"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <Border Width="46" Height="46" CornerRadius="12" ClipToBounds="True">
+                      <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#2A75FF" Offset="0"/><GradientStop Color="#0B2A78" Offset="1"/></LinearGradientBrush></Border.Background>
+                      <Viewbox Width="31" Height="31" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Path Fill="White" Stretch="Uniform" Data="M48.8354,10.0479 C48.3232,9.792 48.1025,10.2798 47.8032,10.5278 C46.7793,11.624 45.9048,12.1597 44.7622,12.0957 C43.0923,12 41.666,12.5356 40.4058,13.8398 C40.1377,12.2319 39.2476,11.272 37.8926,10.6558 C36.4668,10.0156 35.9702,9.3198 35.356,7.7275 C35.2456,7.3999 35.1353,7.064 34.7651,7.0078 C34.3633,6.9439 34.2056,7.2876 34.0479,7.5757 C33.418,8.752 33.1733,10.0479 33.1973,11.3599 C33.2524,14.312 34.4736,16.6641 36.8999,18.3359 C37.1758,18.5278 37.2466,18.7197 37.1597,19 C36.9946,19.5757 36.7974,20.1357 36.624,20.7119 C36.5137,21.0801 36.3486,21.1597 35.9624,21 C32.4644,19.5918 30.7393,16.8721 27.2334,13.52 C26.7764,13.1758 26.3193,12.856 25.8467,12.5518 C23.8618,10.584 26.1069,8.9678 26.627,8.7759 C27.1704,8.5757 26.8159,7.8877 25.0591,7.896 C21.6953,7.9038 19.647,9.3037 18.7095,9.584 C16.8501,9.2236 14.9199,9.1436 12.9033,9.376 C9.106,9.8076 6.0728,11.6396 3.8433,14.7681 C1.1646,18.5278 0.5342,22.7998 1.3066,27.2559 C2.1177,31.9521 4.4658,35.8398 8.0737,38.8799 C11.8159,42.0322 16.1255,43.5762 21.041,43.2803 C24.0269,43.104 27.3516,42.6963 31.1016,39.4561 C34.2056,40.752 37.1758,40.208 38.1211,40.0078 C39.6021,39.688 39.4995,38.2881 38.9639,38.0322 C37.1758,37.1841 35.5762,36.8081 34.71,36.1279 C36.9155,33.4639 40.2402,30.6958 41.54,21.728 C41.6426,21.0161 41.5557,20.5679 41.54,19.9917 C41.5322,19.6396 41.6108,19.5039 42.0049,19.4639 C47.9292,18.4878 49.064,14.3438 49.3315,11.2559 C49.3711,10.7837 49.3237,10.2959 48.8354,10.0479 Z M24.3262,37.8398 C20.1196,34.4639 18.0791,33.3521 17.2358,33.3999 C16.4482,33.4482 16.5898,34.3682 16.7632,34.9678 C16.9443,35.5601 17.1812,35.9683 17.5117,36.4878 C17.7402,36.832 17.8979,37.3442 17.2832,37.728 C15.9282,38.584 13.5728,37.4399 13.4624,37.3838 C10.7207,35.7358 8.4282,33.5601 6.8135,30.584 C5.2534,27.7197 4.3477,24.6479 4.1978,21.3677 C4.1582,20.5757 4.3867,20.2959 5.1587,20.1519 C12.5327,19.5918 16.1885,22.6719 19.2529,25.7759 C23.6885,31.7202 26.6978,36 30.479,39.104 C28.8643,39.2881 26.1699,39.3281 24.3262,37.8398 Z M26.3433,24.6001 A0.62,0.63 0 1 0 27.5801,24.6001 A0.62,0.63 0 1 0 26.3433,24.6001 Z M32.6064,27.8799 C30.8179,28.6479 29.2583,27.2158 28.6987,26.1279 C28.2495,24.5117 28.7144,23.8159 28.2495,23.4238 C27.3911,22.7441 26.3511,22.856 26.1226,22.1201 C26.5088,21.688 28.0527,21.4077 28.8169,21.7197 C30.834,23.3281 32.5669,25.752 33.1104,26.9521 C33.2446,27.3521 33.0713,27.6802 32.6064,27.8799 Z"/>
+                      </Viewbox>
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="11,0,10,0" VerticalAlignment="Center"><TextBlock Text="Harness 本体更新" FontWeight="SemiBold"/><TextBlock x:Name="HarnessUpdateBubbleText" Foreground="{DynamicResource Muted}" FontSize="10" TextWrapping="Wrap" Margin="0,3,0,0"/></StackPanel>
+                    <Button Grid.Column="2" Style="{StaticResource SecondaryButton}" Content="前往" Padding="12,6" MinHeight="30" VerticalAlignment="Center" Click="OpenHarnessUpdateFromBubble_Click"/>
+                  </Grid>
+                </Border>
+              </StackPanel>
+            </Border>
+          </Popup>
           <Button x:Name="SettingsButton" Style="{StaticResource IconButton}" ToolTip="设置与管理" Click="SettingsButton_Click">
             <Path Data="M12,3 L14,3.7 L15,5.6 L17.2,5.5 L18.6,7.1 L18,9.2 L19.2,11 L18,12.8 L18.6,14.9 L17.2,16.5 L15,16.4 L14,18.3 L12,19 L10,18.3 L9,16.4 L6.8,16.5 L5.4,14.9 L6,12.8 L4.8,11 L6,9.2 L5.4,7.1 L6.8,5.5 L9,5.6 L10,3.7 Z M12,8.2 A2.8,2.8 0 1 0 12,13.8 A2.8,2.8 0 1 0 12,8.2" Stroke="{Binding Foreground,RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.35" Fill="Transparent" Width="18" Height="18" Stretch="Uniform"/>
           </Button>
@@ -63,7 +99,9 @@
           </Border>
           <TextBlock Text="DeepSeek Harness" FontSize="25" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,24,0,7"/>
           <TextBlock x:Name="LoadingText" Text="正在准备桌面环境…" Foreground="{DynamicResource Muted}" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
-          <ProgressBar x:Name="LoadingProgress" Height="3" IsIndeterminate="True" Margin="62,30,62,0" Foreground="{DynamicResource Accent}" Background="{DynamicResource LoadingTrack}" BorderThickness="0"/>
+          <TextBlock x:Name="LoadingDetailText" Text="" Foreground="{DynamicResource SubtleText}" FontSize="10" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,7,0,0"/>
+          <ProgressBar x:Name="LoadingProgress" Minimum="0" Maximum="100" Value="0" Height="3" IsIndeterminate="True" Margin="62,24,62,0" Foreground="{DynamicResource Accent}" Background="{DynamicResource LoadingTrack}" BorderThickness="0"/>
+          <TextBlock x:Name="LoadingPercentText" Text="" Foreground="{DynamicResource LoadingCaption}" FontSize="9" HorizontalAlignment="Center" Margin="0,8,0,0"/>
           <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,20,0,0">
             <TextBlock Text="LOCAL ONLY" Foreground="{DynamicResource LoadingCaption}" FontSize="9" FontWeight="SemiBold"/>
             <Ellipse Width="3" Height="3" Fill="{DynamicResource LoadingDot}" Margin="10,0"/>
@@ -77,13 +115,23 @@
           <Border Width="52" Height="52" CornerRadius="16" Background="{DynamicResource DangerPanelBg}" BorderBrush="{DynamicResource DangerPanelBorder}" BorderThickness="1" HorizontalAlignment="Left">
             <Path Data="M12,4 L21,20 L3,20 Z M12,9 L12,14 M12,17 L12,17.1" Stroke="{DynamicResource DangerText}" StrokeThickness="1.7" Fill="Transparent" Width="24" Height="24" Stretch="Uniform"/>
           </Border>
-          <TextBlock Text="Harness 暂时不可用" FontSize="25" FontWeight="SemiBold" Margin="0,20,0,8"/>
+          <TextBlock x:Name="FaultTitleText" Text="Harness 暂时不可用" FontSize="25" FontWeight="SemiBold" Margin="0,20,0,8"/>
+          <TextBlock x:Name="FaultStageText" Foreground="{DynamicResource DangerText}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,7"/>
           <TextBlock x:Name="FaultMessage" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" LineHeight="21"/>
-          <StackPanel Orientation="Horizontal" Margin="0,25,0,0">
+          <Border Background="{DynamicResource InputBg}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="10" Padding="14,11" Margin="0,16,0,0">
+            <StackPanel>
+              <TextBlock Text="建议操作" FontWeight="SemiBold" FontSize="11"/>
+              <TextBlock x:Name="FaultSuggestionText" Foreground="{DynamicResource Muted}" FontSize="10" TextWrapping="Wrap" Margin="0,5,0,0"/>
+              <TextBlock x:Name="FaultRecentLogText" Foreground="{DynamicResource SubtleText}" FontFamily="Consolas" FontSize="9" TextWrapping="Wrap" Margin="0,10,0,0" MaxHeight="120"/>
+            </StackPanel>
+          </Border>
+          <WrapPanel Margin="0,22,0,0">
             <Button Style="{StaticResource PrimaryButton}" Content="重新启动" Click="RetryButton_Click"/>
             <Button Style="{StaticResource SecondaryButton}" Content="诊断与修复" Margin="10,0,0,0" Click="OpenDiagnosticsButton_Click"/>
             <Button Style="{StaticResource SecondaryButton}" Content="打开日志" Margin="10,0,0,0" Click="OpenLogsButton_Click"/>
-          </StackPanel>
+            <Button Style="{StaticResource SecondaryButton}" Content="复制错误" Margin="10,0,0,0" Click="CopyFaultButton_Click"/>
+            <Button Style="{StaticResource SecondaryButton}" Content="切换旧版本" Margin="10,0,0,0" Click="OpenRuntimeRollbackButton_Click"/>
+          </WrapPanel>
         </StackPanel>
       </Grid>
 
@@ -173,7 +221,7 @@
                 <Border x:Name="RuntimeProcessCard" Grid.Column="2" Style="{StaticResource Card}"><StackPanel><TextBlock Text="SERVER PROCESS" Foreground="{DynamicResource Muted}" FontSize="10" FontWeight="SemiBold"/><TextBlock x:Name="ResourceText" Text="未运行" FontSize="14" Margin="0,10,0,0" TextTrimming="CharacterEllipsis"/></StackPanel></Border>
               </Grid>
               <Border Style="{StaticResource Card}" Margin="0,14,0,0"><StackPanel><TextBlock Text="桌面壳更新" FontWeight="SemiBold"/><TextBlock x:Name="DesktopVersionText" Text="尚未检查更新" Foreground="{DynamicResource Muted}" Margin="0,5,0,15" TextWrapping="Wrap"/><WrapPanel><Button Style="{StaticResource PrimaryButton}" Content="检查桌面壳更新" Margin="0,0,9,8" Click="CheckDesktopUpdateButton_Click"/><Button x:Name="OpenDesktopReleaseButton" Style="{StaticResource SecondaryButton}" Content="打开发布页" Margin="0,0,0,8" IsEnabled="False" Click="OpenDesktopUpdateButton_Click"/></WrapPanel></StackPanel></Border>
-              <Border Style="{StaticResource Card}" Margin="0,14,0,0"><StackPanel><TextBlock Text="Harness 运行时更新" FontWeight="SemiBold"/><TextBlock x:Name="LatestVersionText" Text="尚未检查更新" Foreground="{DynamicResource Muted}" Margin="0,5,0,15" TextWrapping="Wrap"/><WrapPanel><Button Style="{StaticResource PrimaryButton}" Content="检查 Harness 更新" Margin="0,0,9,8" Click="CheckUpdateButton_Click"/><Button x:Name="InstallUpdateButton" Style="{StaticResource SecondaryButton}" Content="安装更新" Margin="0,0,9,8" IsEnabled="False" Click="InstallUpdateButton_Click"/><Button Style="{StaticResource SecondaryButton}" Content="切换所选版本" Margin="0,0,0,8" Click="RollbackButton_Click"/></WrapPanel></StackPanel></Border>
+              <Border Style="{StaticResource Card}" Margin="0,14,0,0"><StackPanel><TextBlock Text="Harness 运行时更新" FontWeight="SemiBold"/><TextBlock x:Name="LatestVersionText" Text="尚未检查更新" Foreground="{DynamicResource Muted}" Margin="0,5,0,13" TextWrapping="Wrap"/><TextBlock Text="下载源" Foreground="{DynamicResource Muted}" FontSize="10"/><WrapPanel Margin="0,7,0,12"><RadioButton x:Name="UpdateSourceAutoChoice" GroupName="RuntimeUpdateSource" Style="{StaticResource CompactChoice}" Content="自动选择" Tag="Auto" IsChecked="True"/><RadioButton x:Name="UpdateSourceOfficialChoice" GroupName="RuntimeUpdateSource" Style="{StaticResource CompactChoice}" Content="官方仓库" Tag="Official"/><RadioButton x:Name="UpdateSourceChinaMirrorChoice" GroupName="RuntimeUpdateSource" Style="{StaticResource CompactChoice}" Content="国内镜像" Tag="ChinaMirror"/></WrapPanel><TextBlock Text="自动模式会测速并在失败时切换；官方仓库使用 Windows 系统代理，国内镜像始终直连。" Foreground="{DynamicResource SubtleText}" FontSize="10" Margin="0,0,0,14" TextWrapping="Wrap"/><WrapPanel><Button Style="{StaticResource PrimaryButton}" Content="检查 Harness 更新" Margin="0,0,9,8" Click="CheckUpdateButton_Click"/><Button x:Name="InstallUpdateButton" Style="{StaticResource SecondaryButton}" Content="安装更新" Margin="0,0,9,8" IsEnabled="False" Click="InstallUpdateButton_Click"/><Button Style="{StaticResource SecondaryButton}" Content="切换所选版本" Margin="0,0,0,8" Click="RollbackButton_Click"/></WrapPanel></StackPanel></Border>
               <TextBlock Text="已安装版本" FontWeight="SemiBold" Margin="0,25,0,9"/><Border Background="{DynamicResource InputBg}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="11"><ListBox x:Name="RuntimeVersionsList" MinHeight="62" MaxHeight="180" BorderThickness="0" Background="Transparent"><ListBox.ItemTemplate><DataTemplate><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="8" Height="8" CornerRadius="4" Background="{DynamicResource Accent}" VerticalAlignment="Center"/><TextBlock Grid.Column="1" Text="{Binding}" Margin="10,0,0,0" FontWeight="SemiBold"/></Grid></DataTemplate></ListBox.ItemTemplate></ListBox></Border>
             </StackPanel></ScrollViewer>
           </TabItem>
@@ -280,7 +328,7 @@
             <Grid x:Name="DiagnosticsContent" Margin="44,34,44,38">
               <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
               <StackPanel><TextBlock Text="诊断与修复" FontSize="23" FontWeight="SemiBold"/><TextBlock Text="检查运行时、端口、配置与 Web 健康" Foreground="{DynamicResource Muted}" Margin="0,5,0,19" TextWrapping="Wrap"/></StackPanel>
-              <WrapPanel Grid.Row="1" Margin="0,0,0,7"><Button Style="{StaticResource PrimaryButton}" Content="运行诊断" Margin="0,0,8,7" Click="RunDiagnosticsButton_Click"/><Button Style="{StaticResource SecondaryButton}" Content="导出" Margin="0,0,8,7" Click="ExportDiagnosticsButton_Click"/><Button Style="{StaticResource SecondaryButton}" Content="重建插件依赖" Margin="0,0,8,7" Click="RepairPluginsButton_Click"/><Button Style="{StaticResource DangerButton}" Content="撤销插件覆盖" Margin="0,0,0,7" Click="ResetPatchButton_Click"/></WrapPanel>
+              <WrapPanel Grid.Row="1" Margin="0,0,0,7"><Button Style="{StaticResource PrimaryButton}" Content="运行诊断" Margin="0,0,8,7" Click="RunDiagnosticsButton_Click"/><Button Style="{StaticResource SecondaryButton}" Content="导出诊断包" Margin="0,0,8,7" Click="ExportDiagnosticsButton_Click"/><Button Style="{StaticResource SecondaryButton}" Content="重建插件依赖" Margin="0,0,8,7" Click="RepairPluginsButton_Click"/><Button Style="{StaticResource DangerButton}" Content="撤销插件覆盖" Margin="0,0,0,7" Click="ResetPatchButton_Click"/></WrapPanel>
               <Grid Grid.Row="2"><TextBox x:Name="DiagnosticsBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontFamily="Cascadia Mono, Consolas" FontSize="11" Padding="15"/><StackPanel x:Name="DiagnosticsEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock Text="尚未运行诊断" FontWeight="SemiBold" HorizontalAlignment="Center"/><TextBlock Text="点击“运行诊断”检查本地环境与 Harness 健康状态" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,5,0,0"/></StackPanel></Grid>
             </Grid>
           </TabItem>

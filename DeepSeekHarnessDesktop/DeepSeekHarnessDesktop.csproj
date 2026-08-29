@@ -8,14 +8,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>DeepSeekHarnessDesktop</AssemblyName>
     <RootNamespace>DeepSeekHarnessDesktop</RootNamespace>
-    <Version>1.1.1</Version>
+    <Version>$(DesktopVersion)</Version>
     <Product>DeepSeek Harness Desktop</Product>
     <Authors>jinganwushideng</Authors>
     <Company>jinganwushideng</Company>
     <Copyright>Copyright © 2026 jinganwushideng</Copyright>
     <AssemblyTitle>DeepSeek Harness Desktop</AssemblyTitle>
     <Description>DeepSeek Harness 的本地 Windows 桌面壳与管理中心</Description>
-    <FileVersion>1.1.1.0</FileVersion>
+    <FileVersion>$(DesktopVersion).0</FileVersion>
     <ApplicationIcon>Assets\Harness.ico</ApplicationIcon>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>

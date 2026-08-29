@@ -8,8 +8,13 @@ dotnet-install.ps1
 **/obj/
 artifacts/
 Release/
+publish/
 TestResults/
 *.trx
+**/.build/
+**/scratch/
+*.bak
+*.bak-*
 
 # Offline runtime and downloaded archives
 DeepSeekHarnessDesktop/Assets/runtime.seed.zip
@@ -42,3 +47,7 @@ helper.mjs
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Local-only experiments and media drafts
+extensions/
+docs/images/video-cover-*.png

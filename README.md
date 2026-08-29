@@ -4,7 +4,7 @@
   <p>DeepSeek Harness 的 Windows 桌面壳与本地管理中心</p>
 </div>
 
-[English](README.en.md) · [下载预发布版](https://github.com/jinganwushideng/deepseek-harness-desktop/releases/tag/v1.1.1)
+[English](README.en.md) · [下载预发布版](https://github.com/jinganwushideng/deepseek-harness-desktop/releases/tag/v1.1.2)
 
 > [!IMPORTANT]
 > 本项目是非官方社区项目，与 DeepSeek 没有隶属或背书关系。DeepSeek、DeepSeek Harness 及相关名称归其各自权利人所有。
@@ -17,7 +17,7 @@
 - 自包含 .NET、Node.js 24、pnpm 与 Harness 离线运行时，首次启动无需下载运行时。
 - 深浅色桌面壳、系统托盘、回复完成 Windows 通知及服务器崩溃恢复。
 - 服务器、更新、插件、Skill、日志、诊断、数据与加密备份管理。
-- 自动检查桌面壳 GitHub Release 与 Harness npm 版本；仅提示不静默安装，可在设置中关闭。关闭更新提示后会记住该版本，未来更高版本仍会再次提醒。
+- 每次启动自动检查桌面壳 GitHub Release 与 Harness npm 版本；有更新时在标题栏显示更新入口，并用不同图案分别展示桌面壳与 Harness 本体更新。仅提示不静默安装，可在设置中关闭。
 - 官方插件与用户插件分离；用户 CLI/Skill 包存放在独立的 `launcher-packages` 目录。
 - 独立皮肤中心完整显示已验证的社区皮肤并支持搜索，不与普通插件混排；可选择让桌面壳跟随皮肤的明暗和语义颜色，并自动修复低对比度、纯白强调色等不可读组合。
 - 安装包离线内置“鲸鱼娘昼夜工坊”和“DeepSeek Harness Themes”两套精选皮肤；首次运行可分别选择启用、保留但关闭或删除，默认均不启用且最多只启用一套。
@@ -28,7 +28,7 @@
 
 ## 安装
 
-1. 从 [Releases](https://github.com/jinganwushideng/deepseek-harness-desktop/releases) 下载 `DeepSeek-Harness-Desktop-Setup-1.1.1.exe`。
+1. 从 [Releases](https://github.com/jinganwushideng/deepseek-harness-desktop/releases) 下载 `DeepSeek-Harness-Desktop-Setup-1.1.2.exe`。
 2. 运行安装程序。它按当前用户安装到 `%LOCALAPPDATA%\Programs\DeepSeek Harness Desktop`，不需要管理员权限。
 3. 首次启动选择工作目录、DSH_HOME 和端口，然后按需设置模型 API Key。
 

@@ -121,7 +121,7 @@ public sealed class PluginService
         if (tokens.Count == 0) throw new ArgumentException("插件来源不能为空。", nameof(input));
 
         var executable = Path.GetFileNameWithoutExtension(tokens[0]).ToLowerInvariant();
-        if (executable == "dsh") return NormalizeRepositoryLink(ParseDshCommand(tokens, 1, input));
+        if (executable == "dsh" && tokens.Count > 1) return NormalizeRepositoryLink(ParseDshCommand(tokens, 1, input));
 
         if (executable == "npx")
         {

@@ -4,7 +4,7 @@
   <p>A Windows desktop shell and local management center for DeepSeek Harness</p>
 </div>
 
-[中文](README.md) · [Download the prerelease](https://github.com/jinganwushideng/deepseek-harness-desktop/releases/tag/v1.1.1)
+[中文](README.md) · [Download the prerelease](https://github.com/jinganwushideng/deepseek-harness-desktop/releases/tag/v1.1.2)
 
 > [!IMPORTANT]
 > This is an unofficial community project. It is not affiliated with or endorsed by DeepSeek. DeepSeek, DeepSeek Harness, and related names belong to their respective owners.
@@ -17,7 +17,7 @@
 - Bundles self-contained .NET, Node.js 24, pnpm, and an offline Harness runtime.
 - Light and dark shell themes, system tray support, Windows completion notifications, and crash recovery.
 - Management pages for the server, updates, plugins, Skills, logs, diagnostics, data, and encrypted backups.
-- Automatic checks for desktop GitHub Releases and Harness npm versions. Checks only show a prompt and never install silently; they can be disabled in Settings. Dismissal is remembered for that release only.
+- Automatic checks for desktop GitHub Releases and Harness npm versions on every launch. Available desktop and Harness updates appear as visually distinct cards in the title-bar update center. Checks never install silently and can be disabled in Settings.
 - Keeps official plugins separate from user-installed packages; user CLI/Skill packages live in an isolated `launcher-packages` directory.
 - A dedicated skin center keeps community skins out of the regular plugin list and can optionally synchronize the shell's light/dark state and semantic colors while repairing unsafe low-contrast palettes.
 - The installer includes the Deep Whale day/night skin and DeepSeek Harness Themes for offline first-run selection. Each can be enabled, kept disabled, or removed; both default to disabled and no more than one is enabled.
@@ -29,7 +29,7 @@
 
 ## Install
 
-1. Download `DeepSeek-Harness-Desktop-Setup-1.1.1.exe` from [Releases](https://github.com/jinganwushideng/deepseek-harness-desktop/releases).
+1. Download `DeepSeek-Harness-Desktop-Setup-1.1.2.exe` from [Releases](https://github.com/jinganwushideng/deepseek-harness-desktop/releases).
 2. Run the installer. It installs per user to `%LOCALAPPDATA%\Programs\DeepSeek Harness Desktop` and does not require administrator rights.
 3. On first launch, select a workspace, DSH_HOME, and local port, then configure model API keys as needed.
 

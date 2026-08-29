@@ -1,5 +1,5 @@
 param(
-    [string]$ReleaseTag = "v1.1.1",
+    [string]$ReleaseTag = "",
     [string]$Destination = "",
     [string]$SourcePath = "",
     [string]$Sha256 = "C1134FE86042895B781090C50054F050817E05C59321FB6597E5F691C505C608",
@@ -8,6 +8,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($ReleaseTag)) {
+    [xml]$props = Get-Content -LiteralPath (Join-Path $projectRoot "Directory.Build.props") -Raw
+    $ReleaseTag = [string]$props.Project.PropertyGroup.RuntimeSeedReleaseTag
+}
 if ([string]::IsNullOrWhiteSpace($Destination)) {
     $Destination = Join-Path $projectRoot "DeepSeekHarnessDesktop\Assets\runtime.seed.zip"
 }

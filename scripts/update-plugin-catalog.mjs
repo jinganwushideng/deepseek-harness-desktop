@@ -391,7 +391,37 @@ const expandVisualCategory = item => {
   return visualName.test(name) || visualDescription.test(description) ? 'Skin' : item.category;
 };
 
-const stableItems = items => [...items]
+const itemPreference = item =>
+  Number(item?.verified) * 1_000_000 +
+  (String(item?.package || '').startsWith('@dsh-external/') ? 0 : 100_000) +
+  (String(item?.sourceType || '').toLowerCase() === 'npm' ? 50_000 : 0) +
+  Math.min(Number(item?.popularity) || 0, 99_999) +
+  (item?.descriptionZh ? 100 : 0) + (item?.previewImageUrl ? 10 : 0);
+
+const dedupeItems = items => {
+  const byInstall = new Map();
+  for (const item of items.filter(Boolean)) {
+    const key = String(item.installSpec || item.package || item.id || '').trim().toLowerCase();
+    if (!key) continue;
+    const current = byInstall.get(key);
+    if (!current || itemPreference(item) > itemPreference(current)) byInstall.set(key, item);
+  }
+  const byPackage = new Map();
+  for (const item of byInstall.values()) {
+    const key = String(item.package || '').trim().toLowerCase();
+    const current = byPackage.get(key);
+    if (!current || itemPreference(item) > itemPreference(current)) byPackage.set(key, item);
+  }
+  const byId = new Map();
+  for (const item of byPackage.values()) {
+    const key = String(item.id || '').trim().toLowerCase();
+    const current = byId.get(key);
+    if (!current || itemPreference(item) > itemPreference(current)) byId.set(key, item);
+  }
+  return [...byId.values()];
+};
+
+const stableItems = items => dedupeItems(items)
   .filter(item => item?.package && !item.package.startsWith('@deepseek-ai/'))
   .sort((a, b) => Number(b.verified) - Number(a.verified) || b.popularity - a.popularity || a.id.localeCompare(b.id))
   .map(item => ({ ...item, category: expandVisualCategory(item) }))

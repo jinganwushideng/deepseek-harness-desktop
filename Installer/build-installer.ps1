@@ -1,10 +1,17 @@
 param(
-    [string]$Version = "1.1.1",
+    [string]$Version = "",
     [string]$MakeNsisPath = ""
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
+$versionProps = Join-Path $projectRoot "Directory.Build.props"
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    if (-not (Test-Path -LiteralPath $versionProps)) { throw "缺少唯一版本源 Directory.Build.props。" }
+    [xml]$props = Get-Content -LiteralPath $versionProps -Raw
+    $Version = [string]$props.Project.PropertyGroup.DesktopVersion
+}
+if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw "无效桌面版本：$Version" }
 $appProject = Join-Path $projectRoot "DeepSeekHarnessDesktop\DeepSeekHarnessDesktop.csproj"
 $dotnet = Join-Path $projectRoot ".dotnet\dotnet.exe"
 $publishDir = Join-Path $projectRoot "artifacts\publish\win-x64"

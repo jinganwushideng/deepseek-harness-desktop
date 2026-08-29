@@ -35,12 +35,15 @@ public partial class MainWindow : Window
     private readonly SkillService _skills;
     private readonly BackupService _backup;
     private readonly DiagnosticService _diagnostics;
+    private readonly HarnessEventMonitor _responseMonitor;
     private readonly SemaphoreSlim _operationLock = new(1, 1);
     private readonly DispatcherTimer _resourceTimer;
     private LauncherSettings _settings;
     private Forms.NotifyIcon? _tray;
     private string? _latestVersion;
     private DesktopUpdateInfo? _desktopUpdateInfo;
+    private bool _harnessUpdateAvailable;
+    private bool _desktopUpdateAvailable;
     private bool _browserInitialized;
     private bool _showingSettings;
     private bool _explicitExit;
@@ -82,9 +85,16 @@ public partial class MainWindow : Window
         _featuredSkins = new FeaturedSkinService(_paths, _plugins, _log);
         _desktopUpdates = new DesktopUpdateService(_log);
         _backup = new BackupService(_paths, _log);
-        _diagnostics = new DiagnosticService(_paths, _runtime, _server);
+        _diagnostics = new DiagnosticService(_paths, _runtime, _server, _log);
+        _responseMonitor = new HarnessEventMonitor(_log);
+        _responseMonitor.TurnCompleted += completed => Dispatcher.BeginInvoke(() =>
+        {
+            _log.Info("notification", $"Harness turn completed: session={completed.SessionId[..Math.Min(8, completed.SessionId.Length)]} turn={completed.Turn}");
+            ShowResponseCompletionNotification();
+        });
 
         _server.StateChanged += Server_StateChanged;
+        _server.StartupProgressChanged += Server_StartupProgressChanged;
         _server.RestartRequested += AutoRestartAsync;
         _log.LineAdded += line => Dispatcher.BeginInvoke(() => AppendLog(line));
         _resourceTimer = new DispatcherTimer(TimeSpan.FromSeconds(2), DispatcherPriority.Background, (_, _) => UpdateResourceText(), Dispatcher);
@@ -237,7 +247,6 @@ public partial class MainWindow : Window
         Browser.CoreWebView2.WebMessageReceived += Browser_WebMessageReceived;
         Browser.CoreWebView2.NavigationCompleted += (_, _) => SyncBrowserCornerStyle(WindowState != WindowState.Maximized);
         Browser.CoreWebView2.ProcessFailed += (_, e) => _log.Warn("webview", $"render process failed: {e.ProcessFailedKind}");
-        await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ResponseCompletionMonitor.Script);
         await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(WebThemeMonitor.Script);
         await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(WebCornerStyle.Script);
         _browserInitialized = true;
@@ -261,6 +270,7 @@ public partial class MainWindow : Window
         if (_server.State is ServerState.Running or ServerState.Starting) return;
         ShowLoading("正在启动 DeepSeek Harness…");
         await _server.StartAsync(_settings);
+        _responseMonitor.Start(_settings.Port);
         await NavigateHarnessAsync();
     }
 
@@ -340,8 +350,6 @@ public partial class MainWindow : Window
             });
             return;
         }
-        if (_settings.NotifyOnResponseComplete && ResponseCompletionMonitor.IsCompletionMessage(message))
-            Dispatcher.BeginInvoke(() => ShowResponseCompletionNotification());
     }
 
     private void ShowResponseCompletionNotification(bool force = false)
@@ -381,6 +389,8 @@ public partial class MainWindow : Window
             RestartServerButton.IsEnabled = state == ServerState.Running;
             RefreshButton.IsEnabled = state == ServerState.Running || _showingSettings;
             if (!string.IsNullOrWhiteSpace(message)) TitleStatusText.Text = message;
+            if (state == ServerState.Running) _responseMonitor.Start(_settings.Port);
+            else if (state is ServerState.Stopped or ServerState.Faulted or ServerState.NotInstalled) _responseMonitor.Stop();
             _tray!.Text = $"DeepSeek Harness Desktop - {label}";
             UpdateResourceText();
             if (state == ServerState.Faulted) ShowFault(message ?? "Harness 服务异常退出。 ");
@@ -402,6 +412,12 @@ public partial class MainWindow : Window
         TelemetryCheck.IsChecked = _settings.ForceTelemetryOff;
         AutomaticUpdateCheck.IsChecked = _settings.CheckUpdates;
         FollowSkinAppearanceCheck.IsChecked = _settings.FollowSkinAppearance;
+        switch (_settings.HarnessUpdateSource)
+        {
+            case RuntimeUpdateSource.Official: UpdateSourceOfficialChoice.IsChecked = true; break;
+            case RuntimeUpdateSource.ChinaMirror: UpdateSourceChinaMirrorChoice.IsChecked = true; break;
+            default: UpdateSourceAutoChoice.IsChecked = true; break;
+        }
         switch (ShellThemeService.NormalizeMode(_settings.ShellThemeMode))
         {
             case ShellThemeService.FollowSystem: FollowSystemThemeRadio.IsChecked = true; break;
@@ -485,6 +501,10 @@ public partial class MainWindow : Window
         Dispatcher.Invoke(() =>
         {
             LoadingText.Text = message;
+            LoadingDetailText.Text = string.Empty;
+            LoadingProgress.IsIndeterminate = true;
+            LoadingProgress.Value = 0;
+            LoadingPercentText.Text = string.Empty;
             LoadingView.Visibility = Visibility.Visible;
             FaultView.Visibility = Visibility.Collapsed;
             if (!_showingSettings) Browser.Visibility = Visibility.Collapsed;
@@ -519,7 +539,8 @@ public partial class MainWindow : Window
 
     private async Task<int?> RunInstallWithOverlayAsync(
         string title,
-        Func<IProgress<PluginInstallProgress>, CancellationToken, Task<int>> operation)
+        Func<IProgress<PluginInstallProgress>, CancellationToken, Task<int>> operation,
+        string logCategory = "plugin")
     {
         _installCts?.Dispose();
         _installCts = new CancellationTokenSource();
@@ -535,7 +556,7 @@ public partial class MainWindow : Window
         }
         catch (OperationCanceledException)
         {
-            _log.Info("plugin", $"installation cancelled by user: {title}");
+            _log.Info(logCategory, $"operation cancelled by user: {title}");
             return null;
         }
         finally
@@ -585,15 +606,61 @@ public partial class MainWindow : Window
         _installCts.Cancel();
     }
 
-    private void ShowFault(string message)
+    private void Server_StartupProgressChanged(StartupProgress progress)
     {
-        FaultMessage.Text = message;
+        Dispatcher.BeginInvoke(() =>
+        {
+            LoadingText.Text = progress.Title;
+            LoadingDetailText.Text = progress.Detail;
+            LoadingProgress.IsIndeterminate = progress.IsIndeterminate;
+            LoadingProgress.Value = Math.Clamp(progress.Percentage, 0, 100);
+            LoadingPercentText.Text = progress.IsIndeterminate ? "正在等待 Harness 响应" : $"{Math.Clamp(progress.Percentage, 0, 100)}%";
+            if (progress.Stage != StartupStage.Ready || _server.State != ServerState.Running)
+            {
+                LoadingView.Visibility = Visibility.Visible;
+                FaultView.Visibility = Visibility.Collapsed;
+                if (!_showingSettings) Browser.Visibility = Visibility.Collapsed;
+            }
+        });
+    }
+
+    private void ShowFault(string message) => ShowFault(_server.LastFailure ?? new StartupFailure(
+        StartupStage.None,
+        "Harness 暂时不可用",
+        LogService.Redact(message),
+        "打开诊断与修复生成诊断包，或查看最近日志后重新启动。",
+        DateTimeOffset.Now,
+        []));
+
+    private void ShowFault(StartupFailure failure)
+    {
+        FaultTitleText.Text = failure.Title;
+        FaultStageText.Text = failure.Stage == StartupStage.None ? "" : $"失败阶段：{StartupStageLabel(failure.Stage)}";
+        FaultMessage.Text = failure.Detail;
+        FaultSuggestionText.Text = failure.Suggestion;
+        FaultRecentLogText.Text = failure.RecentLogLines.Count == 0
+            ? "没有可显示的最近错误日志。"
+            : string.Join(Environment.NewLine, failure.RecentLogLines.TakeLast(8));
         FaultView.Visibility = Visibility.Visible;
         LoadingView.Visibility = Visibility.Collapsed;
         Browser.Visibility = Visibility.Collapsed;
         SettingsView.Visibility = Visibility.Collapsed;
         _showingSettings = false;
     }
+
+    private static string StartupStageLabel(StartupStage stage) => stage switch
+    {
+        StartupStage.ValidatingSettings => "验证设置",
+        StartupStage.CheckingRuntime => "检查运行时",
+        StartupStage.CheckingPort => "检查端口",
+        StartupStage.PreparingDirectories => "准备目录",
+        StartupStage.StartingProcess => "启动进程",
+        StartupStage.WaitingForPort => "等待端口监听",
+        StartupStage.WaitingForHttp => "等待 Web 首页",
+        StartupStage.WaitingForApi => "验证 Harness API",
+        StartupStage.Ready => "完成",
+        _ => "未知"
+    };
 
     private async Task RunGuardedAsync(Func<Task> action, bool showFault = false, bool waitForTurn = false)
     {
@@ -606,7 +673,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             _log.Error("desktop", ex.ToString());
-            if (showFault) ShowFault(LogService.Redact(ex.Message));
+            if (showFault) ShowFault(_server.LastFailure ?? new StartupFailure(StartupStage.None, "操作失败", LogService.Redact(ex.Message), "打开诊断与修复查看详细信息。", DateTimeOffset.Now, []));
             else ShellDialog.Show(this, LogService.Redact(ex.Message), "DeepSeek Harness Desktop", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally { SettingsBusyProgress.Visibility = Visibility.Collapsed; SettingsTabs.IsEnabled = true; Mouse.OverrideCursor = null; _operationLock.Release(); }
@@ -780,6 +847,8 @@ public partial class MainWindow : Window
         Topmost = false;
     }
 
+    public void ActivateFromSecondInstance() => Dispatcher.BeginInvoke(ShowAndActivate);
+
     private async Task ExitApplicationAsync()
     {
         if (_explicitExit) return;
@@ -796,6 +865,7 @@ public partial class MainWindow : Window
         _windowSource?.RemoveHook(WindowMessageHook);
         _repository.Dispose();
         _previews.Dispose();
+        _responseMonitor.Dispose();
         _log.Dispose();
         SystemEvents.SessionEnding -= SystemEvents_SessionEnding;
         SystemEvents.UserPreferenceChanged -= SystemEvents_UserPreferenceChanged;
@@ -846,6 +916,15 @@ public partial class MainWindow : Window
     private async void RetryButton_Click(object sender, RoutedEventArgs e) => await RunGuardedAsync(StartServerCoreAsync, true);
     private void OpenDiagnosticsButton_Click(object sender, RoutedEventArgs e) => ShowSettings(8);
     private void OpenLogsButton_Click(object sender, RoutedEventArgs e) => OpenFolder(_paths.Logs);
+    private void CopyFaultButton_Click(object sender, RoutedEventArgs e)
+    {
+        var failure = _server.LastFailure;
+        var text = failure is null
+            ? FaultMessage.Text
+            : $"{failure.Title}\n阶段：{failure.Stage}\n{failure.Detail}\n建议：{failure.Suggestion}\n\n{string.Join(Environment.NewLine, failure.RecentLogLines)}";
+        System.Windows.Clipboard.SetText(LogService.Redact(text));
+    }
+    private void OpenRuntimeRollbackButton_Click(object sender, RoutedEventArgs e) => ShowSettings(1);
 
     private string? SelectFolder(string description, string initial)
     {
@@ -996,14 +1075,34 @@ public partial class MainWindow : Window
     private async void CheckUpdateButton_Click(object sender, RoutedEventArgs e) => await RunGuardedAsync(() => CheckUpdatesCoreAsync(true));
     private async Task CheckUpdatesCoreAsync(bool notify)
     {
-        LatestVersionText.Text = "正在查询 npm…";
-        _latestVersion = await _runtime.CheckLatestAsync();
+        var source = CaptureRuntimeUpdateSource();
+        LatestVersionText.Text = source == RuntimeUpdateSource.Auto ? "正在测速官方仓库与国内镜像…" : $"正在查询{RuntimeService.SourceDisplayName(source)}…";
+        _latestVersion = await _runtime.CheckLatestAsync(source);
         _settings.LastUpdateCheck = DateTimeOffset.Now;
         _settingsService.Save(_settings);
-        var available = !string.IsNullOrWhiteSpace(_latestVersion) && !_latestVersion.Equals(_settings.CurrentRuntimeVersion, StringComparison.OrdinalIgnoreCase);
-        LatestVersionText.Text = available ? $"可用版本：{_latestVersion}（当前 {_settings.CurrentRuntimeVersion}）" : $"当前已是 npm 最新版：{_settings.CurrentRuntimeVersion}";
+        var available = !string.IsNullOrWhiteSpace(_latestVersion) && DesktopUpdateService.IsNewerVersion(_latestVersion, _settings.CurrentRuntimeVersion);
+        var resolved = RuntimeService.SourceDisplayName(source == RuntimeUpdateSource.Auto ? _runtime.LastResolvedSource : source);
+        LatestVersionText.Text = available ? $"可用版本：{_latestVersion}（当前 {_settings.CurrentRuntimeVersion}）· {resolved}" : $"当前已是 npm 最新版：{_settings.CurrentRuntimeVersion} · {resolved}";
         InstallUpdateButton.IsEnabled = available;
+        _harnessUpdateAvailable = available;
+        HarnessUpdateBubbleText.Text = available ? $"{_settings.CurrentRuntimeVersion} → {_latestVersion} · {resolved}" : string.Empty;
+        UpdateHeaderUpdateCenter();
         if (notify && !available) ShellDialog.Show(this, "当前已是 npm 最新版。", "检查更新");
+    }
+
+    private RuntimeUpdateSource CaptureRuntimeUpdateSource()
+    {
+        var source = UpdateSourceOfficialChoice.IsChecked == true
+            ? RuntimeUpdateSource.Official
+            : UpdateSourceChinaMirrorChoice.IsChecked == true
+                ? RuntimeUpdateSource.ChinaMirror
+                : RuntimeUpdateSource.Auto;
+        if (_settings.HarnessUpdateSource != source)
+        {
+            _settings.HarnessUpdateSource = source;
+            _settingsService.Save(_settings);
+        }
+        return source;
     }
 
     private async Task CheckDesktopUpdatesSilentAsync()
@@ -1030,14 +1129,20 @@ public partial class MainWindow : Window
 
         if (available is null)
         {
+            _desktopUpdateAvailable = false;
             DesktopVersionText.Text = $"当前已是最新桌面壳版本：{DesktopUpdateService.CurrentVersion}";
+            DesktopUpdateBubbleText.Text = string.Empty;
+            UpdateHeaderUpdateCenter();
             if (notify) ShellDialog.Show(this, "当前已是最新桌面壳版本。", "检查桌面壳更新");
             return;
         }
 
+        _desktopUpdateAvailable = true;
         var prerelease = available.IsPrerelease ? " · 预发布" : string.Empty;
         DesktopVersionText.Text = $"可用桌面壳版本：{available.Version}{prerelease}（当前 {DesktopUpdateService.CurrentVersion}）";
         DesktopUpdateBannerText.Text = $"版本 {available.Version}{prerelease} 已发布。更新需要下载并运行新版安装程序。";
+        DesktopUpdateBubbleText.Text = $"{DesktopUpdateService.CurrentVersion} → {available.Version}{prerelease}";
+        UpdateHeaderUpdateCenter();
         if (notify || !_settings.DismissedDesktopUpdateVersion.Equals(available.Version, StringComparison.OrdinalIgnoreCase))
             DesktopUpdateBanner.Visibility = Visibility.Visible;
     }
@@ -1060,32 +1165,79 @@ public partial class MainWindow : Window
         OpenExternal(target);
     }
 
+    private void UpdateHeaderUpdateCenter()
+    {
+        var count = (_desktopUpdateAvailable ? 1 : 0) + (_harnessUpdateAvailable ? 1 : 0);
+        DesktopUpdateBubbleCard.Visibility = _desktopUpdateAvailable ? Visibility.Visible : Visibility.Collapsed;
+        HarnessUpdateBubbleCard.Visibility = _harnessUpdateAvailable ? Visibility.Visible : Visibility.Collapsed;
+        UpdateCenterBadgeText.Text = count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        UpdateCenterButton.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        UpdateCenterButton.ToolTip = count switch
+        {
+            2 => "桌面壳与 Harness 都有更新",
+            1 when _desktopUpdateAvailable => "桌面壳有更新",
+            1 => "Harness 本体有更新",
+            _ => "查看可用更新"
+        };
+        if (count == 0) UpdateCenterPopup.IsOpen = false;
+    }
+
+    private void UpdateCenterButton_Click(object sender, RoutedEventArgs e) =>
+        UpdateCenterPopup.IsOpen = !UpdateCenterPopup.IsOpen;
+
+    private void OpenDesktopUpdateFromBubble_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateCenterPopup.IsOpen = false;
+        OpenDesktopUpdateButton_Click(sender, e);
+    }
+
+    private void OpenHarnessUpdateFromBubble_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateCenterPopup.IsOpen = false;
+        ShowSettings(1);
+    }
+
     private async void InstallUpdateButton_Click(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrWhiteSpace(_latestVersion)) return;
         if (ShellDialog.Show(this, $"将安装并健康验证 Harness {_latestVersion}，失败会自动回滚。继续吗？", "安装更新", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         await RunGuardedAsync(async () =>
         {
-            var old = _settings.CurrentRuntimeVersion;
-            var wasRunning = _server.State == ServerState.Running;
-            if (wasRunning) await _server.StopAsync();
-            ShowLoading($"正在安装 Harness {_latestVersion}…");
-            try
+            var targetVersion = _latestVersion!;
+            var source = CaptureRuntimeUpdateSource();
+            var result = await RunInstallWithOverlayAsync($"正在更新 Harness {targetVersion}", async (progress, cancellationToken) =>
             {
-                await _runtime.InstallVersionAsync(_latestVersion!, old, new Progress<string>(ShowLoading));
-                _settings.CurrentRuntimeVersion = _latestVersion!;
-                _settingsService.Save(_settings);
-                await _server.StartAsync(_settings);
-                await NavigateHarnessAsync();
-            }
-            catch
-            {
-                await _runtime.SwitchAsync(old);
-                _settings.CurrentRuntimeVersion = old;
-                _settingsService.Save(_settings);
-                if (wasRunning) { await _server.StartAsync(_settings); await NavigateHarnessAsync(); }
-                throw;
-            }
+                var old = _settings.CurrentRuntimeVersion;
+                var wasRunning = _server.State == ServerState.Running;
+                if (wasRunning)
+                {
+                    progress.Report(new PluginInstallProgress(2, "正在暂停 Harness 服务", "等待运行时文件解除占用"));
+                    await _server.StopAsync();
+                }
+                try
+                {
+                    await _runtime.InstallVersionAsync(targetVersion, old, source, progress, cancellationToken);
+                    _settings.CurrentRuntimeVersion = targetVersion;
+                    _settingsService.Save(_settings);
+                    progress.Report(new PluginInstallProgress(97, "正在启动新版本", "执行 HTTP 健康检查，失败会自动回滚"));
+                    await _server.StartAsync(_settings, cancellationToken);
+                    await NavigateHarnessAsync();
+                    return 0;
+                }
+                catch
+                {
+                    progress.Report(new PluginInstallProgress(96, "正在回滚", $"恢复 Harness {old}"));
+                    if (_server.Process is not null) await _server.StopAsync();
+                    await _runtime.SwitchAsync(old, CancellationToken.None);
+                    _settings.CurrentRuntimeVersion = old;
+                    _settingsService.Save(_settings);
+                    if (wasRunning) { await _server.StartAsync(_settings, CancellationToken.None); await NavigateHarnessAsync(); }
+                    throw;
+                }
+            }, "runtime");
+            if (result is null) return;
+            _harnessUpdateAvailable = false;
+            UpdateHeaderUpdateCenter();
             RefreshRuntimeView();
         }, true);
     }
@@ -1667,12 +1819,16 @@ public partial class MainWindow : Window
     }
 
     private async void RunDiagnosticsButton_Click(object sender, RoutedEventArgs e) => await RunGuardedAsync(async () => { DiagnosticsBox.Text = await _diagnostics.RunAsync(_settings); DiagnosticsEmptyState.Visibility = Visibility.Collapsed; });
-    private void ExportDiagnosticsButton_Click(object sender, RoutedEventArgs e)
+    private async void ExportDiagnosticsButton_Click(object sender, RoutedEventArgs e) => await RunGuardedAsync(async () =>
     {
-        if (string.IsNullOrWhiteSpace(DiagnosticsBox.Text)) { ShellDialog.Show(this, "请先运行完整诊断。", "导出诊断"); return; }
-        var path = _diagnostics.Export(DiagnosticsBox.Text + Environment.NewLine + string.Join(Environment.NewLine, _log.Recent.TakeLast(300)));
-        ShellDialog.Show(this, "诊断包已导出：\n" + path, "导出完成");
-    }
+        if (string.IsNullOrWhiteSpace(DiagnosticsBox.Text))
+        {
+            DiagnosticsBox.Text = await _diagnostics.RunAsync(_settings);
+            DiagnosticsEmptyState.Visibility = Visibility.Collapsed;
+        }
+        var path = await _diagnostics.ExportBundleAsync(_settings, DiagnosticsBox.Text);
+        ShellDialog.Show(this, "脱敏诊断包已导出：\n" + path + "\n\n凭据与 .env 未包含在诊断包中。", "导出完成");
+    });
     private async void RepairPluginsButton_Click(object sender, RoutedEventArgs e) => await RunGuardedAsync(async () => { await WithServerStoppedAsync(async () => { var exit = await _plugins.ReinstallAsync(_settings); if (exit != 0) throw new InvalidOperationException($"重建插件依赖失败，退出代码 {exit}。"); }); await RefreshPluginAndSkillListsAsync(); ShellDialog.Show(this, "插件依赖与随包 Skill 已重建。", "修复完成"); });
     private async void ResetPatchButton_Click(object sender, RoutedEventArgs e)
     {

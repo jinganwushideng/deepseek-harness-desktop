@@ -18,6 +18,8 @@ public sealed class LauncherSettings
     public bool OpenExternalBrowser { get; set; }
     public bool ForceTelemetryOff { get; set; } = true;
     public bool CheckUpdates { get; set; } = true;
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public RuntimeUpdateSource HarnessUpdateSource { get; set; } = RuntimeUpdateSource.Auto;
     public string CurrentRuntimeVersion { get; set; } = RuntimeInfo.SeedVersion;
     public DateTimeOffset? LastUpdateCheck { get; set; }
     public DateTimeOffset? LastDesktopUpdateCheck { get; set; }
@@ -39,6 +41,13 @@ public enum ServerState
     Stopping,
     Maintenance,
     Faulted
+}
+
+public enum RuntimeUpdateSource
+{
+    Auto,
+    Official,
+    ChinaMirror
 }
 
 public enum PluginCategory

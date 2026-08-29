@@ -1,36 +1,34 @@
-using System.Threading;
 using System.Windows;
+using DeepSeekHarnessDesktop.Services;
 
 namespace DeepSeekHarnessDesktop;
 
 public partial class App : System.Windows.Application
 {
-    private Mutex? _mutex;
+    private SingleInstanceCoordinator? _instance;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         var instanceSuffix = Environment.GetEnvironmentVariable("DSH_DESKTOP_INSTANCE");
-        var mutexName = string.IsNullOrWhiteSpace(instanceSuffix)
-            ? "DeepSeekHarnessDesktop.SingleInstance"
-            : $"DeepSeekHarnessDesktop.SingleInstance.{instanceSuffix}";
-        _mutex = new Mutex(true, mutexName, out var first);
-        if (!first)
+        _instance = new SingleInstanceCoordinator(instanceSuffix);
+        if (!_instance.IsPrimary)
         {
-            ShellDialog.Show("DeepSeek Harness Desktop 已经在运行，请从系统托盘打开。", "DeepSeek Harness Desktop");
-            Shutdown();
-            return;
+            var notified = _instance.NotifyPrimaryAsync().GetAwaiter().GetResult();
+            _instance.Dispose();
+            _instance = null;
+            Environment.Exit(notified ? 0 : 1);
         }
 
         var window = new MainWindow();
         MainWindow = window;
         window.Show();
+        _instance.StartListening(() => Dispatcher.BeginInvoke(window.ActivateFromSecondInstance));
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
-        _mutex?.ReleaseMutex();
-        _mutex?.Dispose();
+        _instance?.Dispose();
         base.OnExit(e);
     }
 }
